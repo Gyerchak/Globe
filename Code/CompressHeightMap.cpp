@@ -1,7 +1,7 @@
 // CompressHeightMap.cpp
 // Location: Code/CompressHeightMap.cpp
 // Compile: g++ -std=c++20 -static Code/CompressHeightMap.cpp -o Executables/CompressHeightMap.exe
-// Run: ./Executables/CompressHeightMap.exe
+// Double‑click the exe, or run: ./Executables/CompressHeightMap.exe
 
 #include <iostream>
 #include <fstream>
@@ -9,6 +9,9 @@
 #include <cstdint>
 #include <cmath>
 #include <algorithm>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 constexpr int WIDTH = 65536;
 constexpr int HEIGHT = 65536;
@@ -24,7 +27,6 @@ uint8_t compress(int16_t raw)
     if (raw <= 50)
         return static_cast<uint8_t>(raw); // 1..50
 
-    // Helper lambda: apply power curve within [inMin, inMax] -> [outMin, outMax]
     auto map_bucket = [&](int inMin, int inMax, int outMin, int outMax) -> uint8_t
     {
         double frac = (static_cast<double>(raw) - inMin) / (inMax - inMin);
@@ -59,16 +61,35 @@ uint8_t compress(int16_t raw)
 
 int main()
 {
-    // Input: the 16-bit square map created with gdalwarp
-    const std::string inFile = "Input/GEBCO16bitSquare16bit.bin";
+    // Try to locate the project root (where the executable is located)
+    fs::path exePath = fs::current_path();
+    // If the exe is inside Executables/, go up one level to the project root
+    if (exePath.filename() == "Executables")
+        exePath = exePath.parent_path();
 
+    // Input: the 16-bit square map created with gdalwarp
+    fs::path inFile = exePath / "Input" / "GEBCO16bitSquare16bit.bin";
     // Output: the 8-bit compressed heightmap
-    const std::string outFile = "Input/HeightMap.bin";
+    fs::path outFile = exePath / "Input" / "HeightMap.bin";
+
+    std::cout << "Input:  " << inFile.string() << "\n";
+    std::cout << "Output: " << outFile.string() << "\n";
+
+    if (!fs::exists(inFile))
+    {
+        std::cerr << "ERROR: Input file not found!\n";
+        std::cerr << "Please run this program from the project root, or place the file at the correct location.\n";
+        std::cout << "\nPress Enter to exit...";
+        std::cin.get();
+        return 1;
+    }
 
     std::ifstream fin(inFile, std::ios::binary);
     if (!fin)
     {
         std::cerr << "Cannot open " << inFile << "\n";
+        std::cout << "\nPress Enter to exit...";
+        std::cin.get();
         return 1;
     }
 
@@ -76,6 +97,8 @@ int main()
     if (!fout)
     {
         std::cerr << "Cannot create " << outFile << "\n";
+        std::cout << "\nPress Enter to exit...";
+        std::cin.get();
         return 1;
     }
 
@@ -92,6 +115,8 @@ int main()
         if (!fin)
         {
             std::cerr << "Error reading row " << y << "\n";
+            std::cout << "\nPress Enter to exit...";
+            std::cin.get();
             return 1;
         }
         for (int x = 0; x < WIDTH; ++x)
@@ -101,6 +126,8 @@ int main()
         if (y % 10000 == 0)
             std::cout << "Row " << y << " / " << HEIGHT << "\n";
     }
-    std::cout << "Done. Output: " << outFile << " (4 GiB)\n";
+    std::cout << "Done! Output written to " << outFile << " (4 GiB)\n";
+    std::cout << "\nPress Enter to exit...";
+    std::cin.get();
     return 0;
 }
