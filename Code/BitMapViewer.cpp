@@ -1,138 +1,208 @@
-// CompressHeightMap.cpp
-// Location: Code/CompressHeightMap.cpp
-// Compile: g++ -std=c++20 -static Code/CompressHeightMap.cpp -o Executables/CompressHeightMap.exe
-// Double‑click the exe, or run: ./Executables/CompressHeightMap.exe
+// BitMapViewer.cpp  (full 65536x32768 PNG output, overflow fixed)
+// Location: Code/BitMapViewer.cpp
+// Compile: g++ -std=c++20 -I SourceCode Code/BitMapViewer.cpp -o Executables/BitMapViewer.exe -static
 
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "../SourceCode/stb_image_write.h"
+#include <cstdint>
+#include <vector>
+#include <string>
 #include <iostream>
 #include <fstream>
-#include <vector>
-#include <cstdint>
-#include <cmath>
-#include <algorithm>
 #include <filesystem>
+#include <algorithm>
+#include <cmath>
 
 namespace fs = std::filesystem;
 
-constexpr int WIDTH = 65536;
-constexpr int HEIGHT = 32768; // 2:1 ratio – matches your source file
-constexpr double GAMMA = 0.5; // <1 expands lower values; adjust 0.3–0.7
+// ------------------------------------------------------------------
+// Config – full source resolution
+// ------------------------------------------------------------------
+constexpr int SRC_WIDTH = 65536;
+constexpr int SRC_HEIGHT = 32768;
+constexpr int OUT_WIDTH = 65536;  // change to 8192 for a quick preview
+constexpr int OUT_HEIGHT = 32768; // change to 4096 accordingly
 
-// Map a raw 16-bit elevation (metres) to 0-255 using the non-linear scheme.
-uint8_t compress(int16_t raw)
+// ------------------------------------------------------------------
+// Colour ramp (same as before)
+// ------------------------------------------------------------------
+struct Color
 {
-    // ----------------------------------------------------------------
-    // Shift so that -5 m becomes the "zero" coastline
-    // ----------------------------------------------------------------
-    int shifted = static_cast<int>(raw) + 5; // e.g. raw=-5 -> 0, raw=-4 -> 1
-    if (shifted <= 0)
-        return 0;
+    uint8_t r, g, b;
+};
 
-    // 1-50 m: preserve full detail (linear)
-    if (shifted <= 50)
-        return static_cast<uint8_t>(shifted); // 1..50
-
-    // Helper lambda: apply power curve within [inMin, inMax] -> [outMin, outMax]
-    auto map_bucket = [&](int inMin, int inMax, int outMin, int outMax) -> uint8_t
+Color heightToColor(uint8_t h)
+{
+    struct Stop
     {
-        double frac = (static_cast<double>(shifted) - inMin) / (inMax - inMin);
-        double curved = std::pow(frac, GAMMA);
-        return static_cast<uint8_t>(outMin + std::round((outMax - outMin) * curved));
+        float pos;
+        uint8_t r, g, b;
     };
+    constexpr Stop stops[] = {
+        {0.0f, 0, 0, 255},
+        {0.15f, 0, 128, 0},
+        {0.35f, 255, 255, 0},
+        {0.55f, 255, 165, 0},
+        {0.75f, 255, 0, 0},
+        {0.90f, 128, 0, 128},
+        {1.0f, 255, 255, 255}};
+    constexpr int n = sizeof(stops) / sizeof(stops[0]);
 
-    if (shifted <= 100)
-        return map_bucket(51, 100, 51, 75);
-    if (shifted <= 200)
-        return map_bucket(101, 200, 76, 100);
-    if (shifted <= 400)
-        return map_bucket(201, 400, 101, 125);
-    if (shifted <= 800)
-        return map_bucket(401, 800, 126, 150);
-    if (shifted <= 1600)
-        return map_bucket(801, 1600, 151, 175);
-    if (shifted <= 3200)
-        return map_bucket(1601, 3200, 176, 200);
-    if (shifted <= 6400)
-        return map_bucket(3201, 6400, 201, 225);
+    float t = h / 255.0f;
+    int i = 0;
+    while (i < n - 1 && t > stops[i + 1].pos)
+        ++i;
+    float segLen = stops[i + 1].pos - stops[i].pos;
+    float local = (t - stops[i].pos) / segLen;
+    if (local < 0)
+        local = 0;
+    if (local > 1)
+        local = 1;
 
-    // Highest band: 6401..9000 m (Everest ~8848 m, with a little buffer)
-    constexpr int inMin = 6401, inMax = 9000;
-    constexpr int outMin = 226, outMax = 255;
-    double frac = (static_cast<double>(shifted) - inMin) / (inMax - inMin);
-    if (frac > 1.0)
-        frac = 1.0;
-    double curved = std::pow(frac, GAMMA);
-    return static_cast<uint8_t>(outMin + std::round((outMax - outMin) * curved));
+    return {
+        static_cast<uint8_t>(stops[i].r + (stops[i + 1].r - stops[i].r) * local),
+        static_cast<uint8_t>(stops[i].g + (stops[i + 1].g - stops[i].g) * local),
+        static_cast<uint8_t>(stops[i].b + (stops[i + 1].b - stops[i].b) * local)};
 }
 
+// ------------------------------------------------------------------
+// Load raw 8-bit heightmap (chunked)
+// ------------------------------------------------------------------
+std::vector<uint8_t> loadHeightMap(const std::string &path)
+{
+    std::ifstream f(path, std::ios::binary);
+    if (!f)
+    {
+        std::cerr << "Cannot open " << path << '\n';
+        return {};
+    }
+    constexpr size_t total = static_cast<size_t>(SRC_WIDTH) * SRC_HEIGHT;
+    std::vector<uint8_t> data(total);
+
+    constexpr size_t CHUNK = 1ULL << 30; // 1 GiB
+    size_t remaining = total;
+    size_t offset = 0;
+    while (remaining > 0)
+    {
+        size_t chunkSize = std::min(CHUNK, remaining);
+        f.read(reinterpret_cast<char *>(data.data() + offset), chunkSize);
+        if (!f)
+        {
+            std::cerr << "Error reading file (read " << offset << " of " << total << " bytes)\n";
+            return {};
+        }
+        offset += chunkSize;
+        remaining -= chunkSize;
+    }
+    return data;
+}
+
+// ------------------------------------------------------------------
+// Generate colour PNG data (full size, overflow fixed)
+// ------------------------------------------------------------------
+std::vector<uint8_t> createColorRGB(const std::vector<uint8_t> &src)
+{
+    std::vector<uint8_t> rgb(static_cast<size_t>(OUT_WIDTH) * OUT_HEIGHT * 3);
+    for (int y = 0; y < OUT_HEIGHT; ++y)
+    {
+        int srcY = static_cast<int>(static_cast<long long>(y) * SRC_HEIGHT / OUT_HEIGHT);
+        for (int x = 0; x < OUT_WIDTH; ++x)
+        {
+            int srcX = static_cast<int>(static_cast<long long>(x) * SRC_WIDTH / OUT_WIDTH);
+            size_t srcIdx = static_cast<size_t>(srcY) * SRC_WIDTH + srcX;
+            uint8_t h = src[srcIdx];
+            Color c = heightToColor(h);
+            size_t dst = (static_cast<size_t>(y) * OUT_WIDTH + x) * 3;
+            rgb[dst + 0] = c.r;
+            rgb[dst + 1] = c.g;
+            rgb[dst + 2] = c.b;
+        }
+    }
+    return rgb;
+}
+
+// ------------------------------------------------------------------
+// Generate grayscale PNG data (full size, overflow fixed)
+// ------------------------------------------------------------------
+std::vector<uint8_t> createGrayRGB(const std::vector<uint8_t> &src)
+{
+    std::vector<uint8_t> rgb(static_cast<size_t>(OUT_WIDTH) * OUT_HEIGHT * 3);
+    for (int y = 0; y < OUT_HEIGHT; ++y)
+    {
+        int srcY = static_cast<int>(static_cast<long long>(y) * SRC_HEIGHT / OUT_HEIGHT);
+        for (int x = 0; x < OUT_WIDTH; ++x)
+        {
+            int srcX = static_cast<int>(static_cast<long long>(x) * SRC_WIDTH / OUT_WIDTH);
+            size_t srcIdx = static_cast<size_t>(srcY) * SRC_WIDTH + srcX;
+            uint8_t h = src[srcIdx];
+            size_t dst = (static_cast<size_t>(y) * OUT_WIDTH + x) * 3;
+            rgb[dst + 0] = h;
+            rgb[dst + 1] = h;
+            rgb[dst + 2] = h;
+        }
+    }
+    return rgb;
+}
+
+// ------------------------------------------------------------------
+// Save PNG
+// ------------------------------------------------------------------
+bool savePNG(const std::string &filename, const std::vector<uint8_t> &rgb, int w, int h)
+{
+    if (!stbi_write_png(filename.c_str(), w, h, 3, rgb.data(), w * 3))
+    {
+        std::cerr << "Failed to write PNG: " << filename << '\n';
+        return false;
+    }
+    std::cout << "Saved " << filename << " (" << w << 'x' << h << ")\n";
+    return true;
+}
+
+// ------------------------------------------------------------------
+// main
+// ------------------------------------------------------------------
 int main()
 {
-    // Try to locate the project root (where the executable is located)
-    fs::path exePath = fs::current_path();
-    // If the exe is inside Executables/, go up one level to the project root
-    if (exePath.filename() == "Executables")
-        exePath = exePath.parent_path();
+    fs::path exeDir = fs::current_path();
+    if (exeDir.filename() == "Executables")
+        exeDir = exeDir.parent_path();
 
-    // Input: the 2:1 16-bit map created with gdalwarp
-    fs::path inFile = exePath / "Input" / "GEBCO_2to1_16bit.bin";
-    // Output: the 8-bit compressed heightmap
-    fs::path outFile = exePath / "Input" / "HeightMap.bin";
-
-    std::cout << "Input:  " << inFile.string() << "\n";
-    std::cout << "Output: " << outFile.string() << "\n";
-
-    if (!fs::exists(inFile))
+    std::string inputPath = (exeDir / "Input" / "HeightMap.bin").string();
+    std::cout << "Loading heightmap: " << inputPath << '\n';
+    auto raw = loadHeightMap(inputPath);
+    if (raw.empty())
     {
-        std::cerr << "ERROR: Input file not found!\n";
-        std::cerr << "Please run this program from the project root, or place the file at the correct location.\n";
-        std::cout << "\nPress Enter to exit...";
+        std::cout << "Press Enter to exit...";
         std::cin.get();
         return 1;
     }
 
-    std::ifstream fin(inFile, std::ios::binary);
-    if (!fin)
+    fs::path outputDir = exeDir / "Output";
+    fs::create_directories(outputDir);
+
+    // Color PNG
+    std::cout << "Creating colour PNG (" << OUT_WIDTH << "x" << OUT_HEIGHT << ")...\n";
+    auto colorRGB = createColorRGB(raw);
+    if (!savePNG((outputDir / "HeightMap.png").string(), colorRGB, OUT_WIDTH, OUT_HEIGHT))
     {
-        std::cerr << "Cannot open " << inFile << "\n";
-        std::cout << "\nPress Enter to exit...";
+        std::cout << "Press Enter to exit...";
+        std::cin.get();
+        return 1;
+    }
+    colorRGB.clear(); // free 6.4 GB
+
+    // Grayscale PNG
+    std::cout << "Creating grayscale PNG...\n";
+    auto grayRGB = createGrayRGB(raw);
+    if (!savePNG((outputDir / "HeightMapGray.png").string(), grayRGB, OUT_WIDTH, OUT_HEIGHT))
+    {
+        std::cout << "Press Enter to exit...";
         std::cin.get();
         return 1;
     }
 
-    std::ofstream fout(outFile, std::ios::binary);
-    if (!fout)
-    {
-        std::cerr << "Cannot create " << outFile << "\n";
-        std::cout << "\nPress Enter to exit...";
-        std::cin.get();
-        return 1;
-    }
-
-    constexpr size_t numPixels = static_cast<size_t>(WIDTH) * HEIGHT;
-    std::cout << "Compressing " << numPixels << " pixels...\n";
-
-    // Process row by row to keep memory low
-    std::vector<int16_t> rowIn(WIDTH);
-    std::vector<uint8_t> rowOut(WIDTH);
-
-    for (int y = 0; y < HEIGHT; ++y)
-    {
-        fin.read(reinterpret_cast<char *>(rowIn.data()), WIDTH * sizeof(int16_t));
-        if (!fin)
-        {
-            std::cerr << "Error reading row " << y << "\n";
-            std::cout << "\nPress Enter to exit...";
-            std::cin.get();
-            return 1;
-        }
-        for (int x = 0; x < WIDTH; ++x)
-            rowOut[x] = compress(rowIn[x]);
-
-        fout.write(reinterpret_cast<const char *>(rowOut.data()), WIDTH);
-        if (y % 10000 == 0)
-            std::cout << "Row " << y << " / " << HEIGHT << "\n";
-    }
-    std::cout << "Done! Output written to " << outFile << " (2 GiB)\n";
-    std::cout << "\nPress Enter to exit...";
+    std::cout << "\nDone! Both full-resolution PNGs saved in " << outputDir.string() << "\n";
+    std::cout << "Press Enter to exit...";
     std::cin.get();
     return 0;
 }
