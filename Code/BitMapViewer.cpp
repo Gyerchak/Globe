@@ -3,6 +3,7 @@
 // Compile: g++ -std=c++20 -I SourceCode -static Code/BitMapViewer.cpp -o Executables/BitMapViewer.exe -lglew32 -lglfw3 -lopengl32 -lgdi32
 // Run: ./Executables/BitMapViewer.exe [path\to\file.bin]
 
+#define GLEW_STATIC
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
