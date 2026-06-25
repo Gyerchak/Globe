@@ -20,11 +20,11 @@ namespace fs = std::filesystem;
 // ------------------------------------------------------------------
 constexpr int SRC_WIDTH = 65536;
 constexpr int SRC_HEIGHT = 32768;
-constexpr int OUT_WIDTH = 65536;  // change to 65536 for full size (requires 6.4 GB RAM!)
-constexpr int OUT_HEIGHT = 32768; // change to 32768 accordingly
+constexpr int OUT_WIDTH = 8192;  // change to 65536 for full size (requires 6.4 GB RAM!)
+constexpr int OUT_HEIGHT = 4096; // change to 32768 accordingly
 
 // ------------------------------------------------------------------
-// Colour ramp (same as before)
+// Colour ramp – blue only for 0, then green→yellow→orange→red→purple→white
 // ------------------------------------------------------------------
 struct Color
 {
@@ -33,8 +33,12 @@ struct Color
 
 Color heightToColor(uint8_t h)
 {
+    // Only pure 0 is water → blue
     if (h == 0)
-        return {0, 0, 0}; // water → black
+        return {0, 0, 255};
+
+    // For h = 1..255, map to green → yellow → orange → red → purple → white
+    float t = (h - 1) / 254.0f; // 0.0 at h=1, 1.0 at h=255
 
     struct Stop
     {
@@ -42,16 +46,16 @@ Color heightToColor(uint8_t h)
         uint8_t r, g, b;
     };
     constexpr Stop stops[] = {
-        {0.0f, 0, 0, 255},
-        {0.15f, 0, 128, 0},
-        {0.35f, 255, 255, 0},
-        {0.55f, 255, 165, 0},
-        {0.75f, 255, 0, 0},
-        {0.90f, 128, 0, 128},
-        {1.0f, 255, 255, 255}};
+        {0.0f, 0, 255, 0},    // green
+        {0.2f, 255, 255, 0},  // yellow
+        {0.4f, 255, 165, 0},  // orange
+        {0.6f, 255, 0, 0},    // red
+        {0.8f, 128, 0, 128},  // purple
+        {1.0f, 255, 255, 255} // white
+    };
     constexpr int n = sizeof(stops) / sizeof(stops[0]);
 
-    float t = h / 255.0f;
+    // find segment
     int i = 0;
     while (i < n - 1 && t > stops[i + 1].pos)
         ++i;
