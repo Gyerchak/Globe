@@ -121,6 +121,7 @@ static std::string buildTree(const fs::path &root)
 }
 
 // Collects all code/text files recursively, skipping "Old" directories
+// and ignoring the two specific output files (Code4Deepseek.txt, Dir4Deepseek.txt)
 static std::vector<fs::path> collectCodeFiles(const fs::path &root)
 {
     std::vector<fs::path> files;
@@ -140,6 +141,11 @@ static std::vector<fs::path> collectCodeFiles(const fs::path &root)
 
         if (entry.is_regular_file() && isCodeFile(entry.path()))
         {
+            // Ignore the two output files (to avoid including the output in itself)
+            std::string fname = entry.path().filename().string();
+            if (fname == "Code4Deepseek.txt" || fname == "Dir4Deepseek.txt")
+                continue;
+
             files.push_back(entry.path());
         }
     }
