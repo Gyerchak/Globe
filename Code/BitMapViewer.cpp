@@ -1,4 +1,4 @@
-// BitMapViewer.cpp  (safe 8192x4096 preview, no memory crash)
+// BitMapViewer.cpp  (safe 8192x4096 preview, rich colour ramp)
 // Compile: g++ -std=c++20 Code/BitMapViewer.cpp -o Executables/BitMapViewer.exe -static
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -20,11 +20,11 @@ namespace fs = std::filesystem;
 // ------------------------------------------------------------------
 constexpr int SRC_WIDTH = 65536;
 constexpr int SRC_HEIGHT = 32768;
-constexpr int OUT_WIDTH = 8192;  // change to 65536 for full size (requires 6.4 GB RAM!)
-constexpr int OUT_HEIGHT = 4096; // change to 32768 accordingly
+constexpr int OUT_WIDTH = 32768;  // change to 65536 for full size (requires 6.4 GB RAM!)
+constexpr int OUT_HEIGHT = 16384; // change to 32768 accordingly
 
 // ------------------------------------------------------------------
-// Colour ramp – blue only for 0, then green→yellow→orange→red→purple→white
+// Colour ramp – blue only for 0, then aquatic → dark green → … → white
 // ------------------------------------------------------------------
 struct Color
 {
@@ -37,7 +37,7 @@ Color heightToColor(uint8_t h)
     if (h == 0)
         return {0, 0, 255};
 
-    // For h = 1..255, map to green → yellow → orange → red → purple → white
+    // For h = 1..255, map to the new colour sequence
     float t = (h - 1) / 254.0f; // 0.0 at h=1, 1.0 at h=255
 
     struct Stop
@@ -46,12 +46,19 @@ Color heightToColor(uint8_t h)
         uint8_t r, g, b;
     };
     constexpr Stop stops[] = {
-        {0.0f, 0, 255, 0},    // green
-        {0.2f, 255, 255, 0},  // yellow
-        {0.4f, 255, 165, 0},  // orange
-        {0.6f, 255, 0, 0},    // red
-        {0.8f, 128, 0, 128},  // purple
-        {1.0f, 255, 255, 255} // white
+        {0.00f, 0, 200, 100},   // aquatic green (lowest land)
+        {0.08f, 0, 100, 0},     // dark green
+        {0.16f, 128, 128, 0},   // olive green
+        {0.25f, 0, 255, 0},     // green
+        {0.33f, 255, 255, 0},   // yellow
+        {0.41f, 127, 255, 0},   // lemon green
+        {0.50f, 255, 165, 0},   // orange
+        {0.58f, 255, 0, 0},     // red
+        {0.66f, 255, 192, 203}, // pink
+        {0.75f, 128, 0, 128},   // purple
+        {0.83f, 0, 0, 0},       // black
+        {0.91f, 128, 128, 128}, // grey
+        {1.00f, 255, 255, 255}  // white
     };
     constexpr int n = sizeof(stops) / sizeof(stops[0]);
 
