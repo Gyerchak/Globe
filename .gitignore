@@ -72,7 +72,9 @@ Testing/
 
 *.bin
 *.nc
+Input/
 Output/
-Ignore/
-Old/
+.Ignore/
+.Old/
 Data/
+0DeepSeek/
