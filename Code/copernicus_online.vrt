@@ -1,0 +1,15 @@
+<VRTDataset rasterXSize="129600" rasterYSize="64800">
+  <SRS dataAxisMapping="2,1">EPSG:4326</SRS>
+  <GeoTransform> -1.8000000000000000e+02,  2.7777777777777778e-03,  0.0000000000000000e+00,
+                  9.0000000000000000e+01,  0.0000000000000000e+00, -2.7777777777777778e-03</GeoTransform>
+  <VRTRasterBand dataType="Int16" band="1">
+    <NoDataValue>-32767</NoDataValue>
+    <ColorInterp>Gray</ColorInterp>
+    <SimpleSource>
+      <SourceFilename>/vsicurl/https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_30m.vrt</SourceFilename>
+      <SourceBand>1</SourceBand>
+      <SrcRect xOff="0" yOff="0" xSize="129600" ySize="64800"/>
+      <DstRect xOff="0" yOff="0" xSize="129600" ySize="64800"/>
+    </SimpleSource>
+  </VRTRasterBand>
+</VRTDataset>

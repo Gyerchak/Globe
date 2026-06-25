@@ -14,45 +14,50 @@
 namespace fs = std::filesystem;
 
 constexpr int WIDTH = 65536;
-constexpr int HEIGHT = 65536;
+constexpr int HEIGHT = 32768; // 2:1 ratio – matches your source file
 constexpr double GAMMA = 0.5; // <1 expands lower values; adjust 0.3–0.7
 
 // Map a raw 16-bit elevation (metres) to 0-255 using the non-linear scheme.
 uint8_t compress(int16_t raw)
 {
-    if (raw <= 0)
+    // ----------------------------------------------------------------
+    // Shift so that -5 m becomes the "zero" coastline
+    // ----------------------------------------------------------------
+    int shifted = static_cast<int>(raw) + 5; // e.g. raw=-5 -> 0, raw=-4 -> 1
+    if (shifted <= 0)
         return 0;
 
     // 1-50 m: preserve full detail (linear)
-    if (raw <= 50)
-        return static_cast<uint8_t>(raw); // 1..50
+    if (shifted <= 50)
+        return static_cast<uint8_t>(shifted); // 1..50
 
+    // Helper lambda: apply power curve within [inMin, inMax] -> [outMin, outMax]
     auto map_bucket = [&](int inMin, int inMax, int outMin, int outMax) -> uint8_t
     {
-        double frac = (static_cast<double>(raw) - inMin) / (inMax - inMin);
+        double frac = (static_cast<double>(shifted) - inMin) / (inMax - inMin);
         double curved = std::pow(frac, GAMMA);
         return static_cast<uint8_t>(outMin + std::round((outMax - outMin) * curved));
     };
 
-    if (raw <= 100)
+    if (shifted <= 100)
         return map_bucket(51, 100, 51, 75);
-    if (raw <= 200)
+    if (shifted <= 200)
         return map_bucket(101, 200, 76, 100);
-    if (raw <= 400)
+    if (shifted <= 400)
         return map_bucket(201, 400, 101, 125);
-    if (raw <= 800)
+    if (shifted <= 800)
         return map_bucket(401, 800, 126, 150);
-    if (raw <= 1600)
+    if (shifted <= 1600)
         return map_bucket(801, 1600, 151, 175);
-    if (raw <= 3200)
+    if (shifted <= 3200)
         return map_bucket(1601, 3200, 176, 200);
-    if (raw <= 6400)
+    if (shifted <= 6400)
         return map_bucket(3201, 6400, 201, 225);
 
     // Highest band: 6401..9000 m (Everest ~8848 m, with a little buffer)
     constexpr int inMin = 6401, inMax = 9000;
     constexpr int outMin = 226, outMax = 255;
-    double frac = (static_cast<double>(raw) - inMin) / (inMax - inMin);
+    double frac = (static_cast<double>(shifted) - inMin) / (inMax - inMin);
     if (frac > 1.0)
         frac = 1.0;
     double curved = std::pow(frac, GAMMA);
@@ -67,8 +72,8 @@ int main()
     if (exePath.filename() == "Executables")
         exePath = exePath.parent_path();
 
-    // Input: the 16-bit square map created with gdalwarp
-    fs::path inFile = exePath / "Input" / "GEBCO16bitSquare16bit.bin";
+    // Input: the 2:1 16-bit map created with gdalwarp
+    fs::path inFile = exePath / "Input" / "GEBCO_2to1_16bit.bin";
     // Output: the 8-bit compressed heightmap
     fs::path outFile = exePath / "Input" / "HeightMap.bin";
 
@@ -126,7 +131,7 @@ int main()
         if (y % 10000 == 0)
             std::cout << "Row " << y << " / " << HEIGHT << "\n";
     }
-    std::cout << "Done! Output written to " << outFile << " (4 GiB)\n";
+    std::cout << "Done! Output written to " << outFile << " (2 GiB)\n";
     std::cout << "\nPress Enter to exit...";
     std::cin.get();
     return 0;

@@ -1,291 +1,138 @@
-// BitMapViewer.cpp
-// Location: Code/BitMapViewer.cpp
-// Compile: g++ -std=c++20 -I SourceCode -static Code/BitMapViewer.cpp -o Executables/BitMapViewer.exe -lglew32 -lglfw3 -lopengl32 -lgdi32
-// Run: ./Executables/BitMapViewer.exe [path\to\file.bin]
+// CompressHeightMap.cpp
+// Location: Code/CompressHeightMap.cpp
+// Compile: g++ -std=c++20 -static Code/CompressHeightMap.cpp -o Executables/CompressHeightMap.exe
+// Double‑click the exe, or run: ./Executables/CompressHeightMap.exe
 
-#define GLEW_STATIC
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
-
-#include <GL/glew.h>
-#include <GLFW/glfw3.h>
-#include <cstdint>
-#include <vector>
-#include <string>
 #include <iostream>
 #include <fstream>
-#include <filesystem>
-#include <algorithm>
+#include <vector>
+#include <cstdint>
 #include <cmath>
+#include <algorithm>
+#include <filesystem>
 
 namespace fs = std::filesystem;
 
-// ------------------------------------------------------------------
-// Config
-// ------------------------------------------------------------------
-constexpr int SRC_WIDTH = 65536;
-constexpr int SRC_HEIGHT = 65536;
-constexpr int VIEW_SIZE = 8192; // display & PNG resolution
-constexpr int WINDOW_W = 1024;
-constexpr int WINDOW_H = 1024;
+constexpr int WIDTH = 65536;
+constexpr int HEIGHT = 32768; // 2:1 ratio – matches your source file
+constexpr double GAMMA = 0.5; // <1 expands lower values; adjust 0.3–0.7
 
-// ------------------------------------------------------------------
-// Colour ramp for heightmap mode
-// ------------------------------------------------------------------
-struct Color
+// Map a raw 16-bit elevation (metres) to 0-255 using the non-linear scheme.
+uint8_t compress(int16_t raw)
 {
-    uint8_t r, g, b;
-};
+    // ----------------------------------------------------------------
+    // Shift so that -5 m becomes the "zero" coastline
+    // ----------------------------------------------------------------
+    int shifted = static_cast<int>(raw) + 5; // e.g. raw=-5 -> 0, raw=-4 -> 1
+    if (shifted <= 0)
+        return 0;
 
-Color heightToColor(uint8_t h)
-{
-    // 0 → blue, then green → yellow → orange → red → purple → white
-    struct Stop
+    // 1-50 m: preserve full detail (linear)
+    if (shifted <= 50)
+        return static_cast<uint8_t>(shifted); // 1..50
+
+    // Helper lambda: apply power curve within [inMin, inMax] -> [outMin, outMax]
+    auto map_bucket = [&](int inMin, int inMax, int outMin, int outMax) -> uint8_t
     {
-        float pos;
-        uint8_t r, g, b;
+        double frac = (static_cast<double>(shifted) - inMin) / (inMax - inMin);
+        double curved = std::pow(frac, GAMMA);
+        return static_cast<uint8_t>(outMin + std::round((outMax - outMin) * curved));
     };
-    constexpr Stop stops[] = {
-        {0.0f, 0, 0, 255},
-        {0.15f, 0, 128, 0},
-        {0.35f, 255, 255, 0},
-        {0.55f, 255, 165, 0},
-        {0.75f, 255, 0, 0},
-        {0.90f, 128, 0, 128},
-        {1.0f, 255, 255, 255}};
-    constexpr int n = sizeof(stops) / sizeof(stops[0]);
 
-    float t = h / 255.0f;
-    // find segment
-    int i = 0;
-    while (i < n - 1 && t > stops[i + 1].pos)
-        ++i;
-    float segLen = stops[i + 1].pos - stops[i].pos;
-    float local = (t - stops[i].pos) / segLen;
-    if (local < 0)
-        local = 0;
-    if (local > 1)
-        local = 1;
+    if (shifted <= 100)
+        return map_bucket(51, 100, 51, 75);
+    if (shifted <= 200)
+        return map_bucket(101, 200, 76, 100);
+    if (shifted <= 400)
+        return map_bucket(201, 400, 101, 125);
+    if (shifted <= 800)
+        return map_bucket(401, 800, 126, 150);
+    if (shifted <= 1600)
+        return map_bucket(801, 1600, 151, 175);
+    if (shifted <= 3200)
+        return map_bucket(1601, 3200, 176, 200);
+    if (shifted <= 6400)
+        return map_bucket(3201, 6400, 201, 225);
 
-    return {
-        static_cast<uint8_t>(stops[i].r + (stops[i + 1].r - stops[i].r) * local),
-        static_cast<uint8_t>(stops[i].g + (stops[i + 1].g - stops[i].g) * local),
-        static_cast<uint8_t>(stops[i].b + (stops[i + 1].b - stops[i].b) * local)};
+    // Highest band: 6401..9000 m (Everest ~8848 m, with a little buffer)
+    constexpr int inMin = 6401, inMax = 9000;
+    constexpr int outMin = 226, outMax = 255;
+    double frac = (static_cast<double>(shifted) - inMin) / (inMax - inMin);
+    if (frac > 1.0)
+        frac = 1.0;
+    double curved = std::pow(frac, GAMMA);
+    return static_cast<uint8_t>(outMin + std::round((outMax - outMin) * curved));
 }
 
-// ------------------------------------------------------------------
-// Load raw 8-bit heightmap
-// ------------------------------------------------------------------
-std::vector<uint8_t> loadHeightMap(const std::string &path)
+int main()
 {
-    std::ifstream f(path, std::ios::binary);
-    if (!f)
-    {
-        std::cerr << "Cannot open " << path << '\n';
-        return {};
-    }
-    const size_t total = static_cast<size_t>(SRC_WIDTH) * SRC_HEIGHT;
-    std::vector<uint8_t> data(total);
-    f.read(reinterpret_cast<char *>(data.data()), total);
-    if (!f)
-    {
-        std::cerr << "Error reading file (expected " << total << " bytes)\n";
-        return {};
-    }
-    return data;
-}
+    // Try to locate the project root (where the executable is located)
+    fs::path exePath = fs::current_path();
+    // If the exe is inside Executables/, go up one level to the project root
+    if (exePath.filename() == "Executables")
+        exePath = exePath.parent_path();
 
-// ------------------------------------------------------------------
-// Downscale + colour → RGB array
-// ------------------------------------------------------------------
-std::vector<uint8_t> createRGB(const std::vector<uint8_t> &src, int viewSize)
-{
-    std::vector<uint8_t> rgb(viewSize * viewSize * 3);
-    for (int y = 0; y < viewSize; ++y)
+    // Input: the 2:1 16-bit map created with gdalwarp
+    fs::path inFile = exePath / "Input" / "GEBCO_2to1_16bit.bin";
+    // Output: the 8-bit compressed heightmap
+    fs::path outFile = exePath / "Input" / "HeightMap.bin";
+
+    std::cout << "Input:  " << inFile.string() << "\n";
+    std::cout << "Output: " << outFile.string() << "\n";
+
+    if (!fs::exists(inFile))
     {
-        int srcY = static_cast<int>(static_cast<long long>(y) * SRC_HEIGHT / viewSize);
-        for (int x = 0; x < viewSize; ++x)
+        std::cerr << "ERROR: Input file not found!\n";
+        std::cerr << "Please run this program from the project root, or place the file at the correct location.\n";
+        std::cout << "\nPress Enter to exit...";
+        std::cin.get();
+        return 1;
+    }
+
+    std::ifstream fin(inFile, std::ios::binary);
+    if (!fin)
+    {
+        std::cerr << "Cannot open " << inFile << "\n";
+        std::cout << "\nPress Enter to exit...";
+        std::cin.get();
+        return 1;
+    }
+
+    std::ofstream fout(outFile, std::ios::binary);
+    if (!fout)
+    {
+        std::cerr << "Cannot create " << outFile << "\n";
+        std::cout << "\nPress Enter to exit...";
+        std::cin.get();
+        return 1;
+    }
+
+    constexpr size_t numPixels = static_cast<size_t>(WIDTH) * HEIGHT;
+    std::cout << "Compressing " << numPixels << " pixels...\n";
+
+    // Process row by row to keep memory low
+    std::vector<int16_t> rowIn(WIDTH);
+    std::vector<uint8_t> rowOut(WIDTH);
+
+    for (int y = 0; y < HEIGHT; ++y)
+    {
+        fin.read(reinterpret_cast<char *>(rowIn.data()), WIDTH * sizeof(int16_t));
+        if (!fin)
         {
-            int srcX = static_cast<int>(static_cast<long long>(x) * SRC_WIDTH / viewSize);
-            uint8_t h = src[srcY * SRC_WIDTH + srcX];
-            Color c = heightToColor(h);
-            size_t idx = (static_cast<size_t>(y) * viewSize + x) * 3;
-            rgb[idx + 0] = c.r;
-            rgb[idx + 1] = c.g;
-            rgb[idx + 2] = c.b;
+            std::cerr << "Error reading row " << y << "\n";
+            std::cout << "\nPress Enter to exit...";
+            std::cin.get();
+            return 1;
         }
+        for (int x = 0; x < WIDTH; ++x)
+            rowOut[x] = compress(rowIn[x]);
+
+        fout.write(reinterpret_cast<const char *>(rowOut.data()), WIDTH);
+        if (y % 10000 == 0)
+            std::cout << "Row " << y << " / " << HEIGHT << "\n";
     }
-    return rgb;
-}
-
-// ------------------------------------------------------------------
-// Save PNG
-// ------------------------------------------------------------------
-void savePNG(const std::string &filename,
-             const std::vector<uint8_t> &rgb, int w, int h)
-{
-    if (!stbi_write_png(filename.c_str(), w, h, 3, rgb.data(), w * 3))
-        std::cerr << "Failed to write PNG: " << filename << '\n';
-    else
-        std::cout << "Saved " << filename << " (" << w << 'x' << h << ")\n";
-}
-
-// ------------------------------------------------------------------
-// GL callbacks & helpers
-// ------------------------------------------------------------------
-static GLuint loadTexture(const std::vector<uint8_t> &rgb, int w, int h)
-{
-    GLuint tex;
-    glGenTextures(1, &tex);
-    glBindTexture(GL_TEXTURE_2D, tex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, rgb.data());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    return tex;
-}
-
-static GLuint compileShader(GLenum type, const char *src)
-{
-    GLuint sh = glCreateShader(type);
-    glShaderSource(sh, 1, &src, nullptr);
-    glCompileShader(sh);
-    return sh;
-}
-
-int main(int argc, char **argv)
-{
-    // Default input file
-    std::string inputPath = "Input/HeightMap.bin";
-    if (argc > 1)
-        inputPath = argv[1];
-
-    std::cout << "Loading heightmap: " << inputPath << '\n';
-    auto raw = loadHeightMap(inputPath);
-    if (raw.empty())
-        return 1;
-
-    // Build RGB data at view resolution
-    std::cout << "Generating colour texture (" << VIEW_SIZE << 'x' << VIEW_SIZE << ")...\n";
-    auto rgb = createRGB(raw, VIEW_SIZE);
-    raw.clear(); // free 4 GB
-
-    // GLFW window
-    if (!glfwInit())
-        return 1;
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    GLFWwindow *win = glfwCreateWindow(WINDOW_W, WINDOW_H, "BitMapViewer", nullptr, nullptr);
-    if (!win)
-        return 1;
-    glfwMakeContextCurrent(win);
-    glfwSwapInterval(1);
-
-    glewExperimental = GL_TRUE;
-    if (glewInit() != GLEW_OK)
-        return 1;
-
-    // Upload texture
-    GLuint tex = loadTexture(rgb, VIEW_SIZE, VIEW_SIZE);
-
-    // Fullscreen quad shader
-    const char *vsSrc = R"(
-#version 330 core
-layout(location=0) in vec2 aPos;
-layout(location=1) in vec2 aTex;
-out vec2 vTex;
-void main() {
-    gl_Position = vec4(aPos, 0.0, 1.0);
-    vTex = aTex;
-}
-)";
-    const char *fsSrc = R"(
-#version 330 core
-in vec2 vTex;
-out vec4 FragColor;
-uniform sampler2D uTex;
-void main() {
-    FragColor = texture(uTex, vTex);
-}
-)";
-
-    GLuint prog = glCreateProgram();
-    glAttachShader(prog, compileShader(GL_VERTEX_SHADER, vsSrc));
-    glAttachShader(prog, compileShader(GL_FRAGMENT_SHADER, fsSrc));
-    glLinkProgram(prog);
-    glUseProgram(prog);
-
-    float quad[] = {
-        // pos       tex
-        -1,
-        -1,
-        0,
-        1,
-        1,
-        -1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        0,
-        -1,
-        -1,
-        0,
-        1,
-        1,
-        1,
-        1,
-        0,
-        -1,
-        1,
-        0,
-        0,
-    };
-    GLuint vao, vbo;
-    glGenVertexArrays(1, &vao);
-    glBindVertexArray(vao);
-    glGenBuffers(1, &vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(quad), quad, GL_STATIC_DRAW);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void *)0);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void *)(2 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-
-    // Mode info
-    std::string modeName = "heightmap";
-    std::string outputDir = "Output";
-    fs::create_directories(outputDir);
-
-    // Main loop
-    std::cout << "Controls: [S] save PNG, [Esc] quit.\n";
-    while (!glfwWindowShouldClose(win))
-    {
-        glfwPollEvents();
-        glClear(GL_COLOR_BUFFER_BIT);
-        glBindTexture(GL_TEXTURE_2D, tex);
-        glBindVertexArray(vao);
-        glDrawArrays(GL_TRIANGLES, 0, 6);
-
-        if (glfwGetKey(win, GLFW_KEY_S) == GLFW_PRESS)
-        {
-            // Save PNG
-            std::string baseName = fs::path(inputPath).stem().string(); // without .bin
-            std::string outName = outputDir + "/" + baseName + "_" + modeName + ".png";
-            savePNG(outName, rgb, VIEW_SIZE, VIEW_SIZE);
-            // wait for key release to avoid multiple saves
-            while (glfwGetKey(win, GLFW_KEY_S) == GLFW_PRESS)
-                glfwWaitEvents();
-        }
-        if (glfwGetKey(win, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-            glfwSetWindowShouldClose(win, GL_TRUE);
-
-        glfwSwapBuffers(win);
-    }
-
-    glfwTerminate();
+    std::cout << "Done! Output written to " << outFile << " (2 GiB)\n";
+    std::cout << "\nPress Enter to exit...";
+    std::cin.get();
     return 0;
 }
