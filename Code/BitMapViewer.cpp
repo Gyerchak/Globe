@@ -1,9 +1,9 @@
-// BitMapViewer.cpp  (full 65536x32768 PNG output, overflow fixed)
-// Location: Code/BitMapViewer.cpp
-// Compile: g++ -std=c++20 -I SourceCode Code/BitMapViewer.cpp -o Executables/BitMapViewer.exe -static
+// BitMapViewer.cpp  (safe 8192x4096 preview, no memory crash)
+// Compile: g++ -std=c++20 Code/BitMapViewer.cpp -o Executables/BitMapViewer.exe -static
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "../SourceCode/stb_image_write.h"
+
 #include <cstdint>
 #include <vector>
 #include <string>
@@ -16,12 +16,12 @@
 namespace fs = std::filesystem;
 
 // ------------------------------------------------------------------
-// Config – full source resolution
+// Config – small output for safety (adjustable)
 // ------------------------------------------------------------------
 constexpr int SRC_WIDTH = 65536;
 constexpr int SRC_HEIGHT = 32768;
-constexpr int OUT_WIDTH = 65536;  // change to 8192 for a quick preview
-constexpr int OUT_HEIGHT = 32768; // change to 4096 accordingly
+constexpr int OUT_WIDTH = 65536;  // change to 65536 for full size (requires 6.4 GB RAM!)
+constexpr int OUT_HEIGHT = 32768; // change to 32768 accordingly
 
 // ------------------------------------------------------------------
 // Colour ramp (same as before)
@@ -33,6 +33,9 @@ struct Color
 
 Color heightToColor(uint8_t h)
 {
+    if (h == 0)
+        return {0, 0, 0}; // water → black
+
     struct Stop
     {
         float pos;
@@ -98,7 +101,7 @@ std::vector<uint8_t> loadHeightMap(const std::string &path)
 }
 
 // ------------------------------------------------------------------
-// Generate colour PNG data (full size, overflow fixed)
+// Generate colour PNG data (downscaled)
 // ------------------------------------------------------------------
 std::vector<uint8_t> createColorRGB(const std::vector<uint8_t> &src)
 {
@@ -122,7 +125,7 @@ std::vector<uint8_t> createColorRGB(const std::vector<uint8_t> &src)
 }
 
 // ------------------------------------------------------------------
-// Generate grayscale PNG data (full size, overflow fixed)
+// Generate grayscale PNG data (downscaled)
 // ------------------------------------------------------------------
 std::vector<uint8_t> createGrayRGB(const std::vector<uint8_t> &src)
 {
@@ -163,6 +166,7 @@ bool savePNG(const std::string &filename, const std::vector<uint8_t> &rgb, int w
 // ------------------------------------------------------------------
 int main()
 {
+    // Locate project root
     fs::path exeDir = fs::current_path();
     if (exeDir.filename() == "Executables")
         exeDir = exeDir.parent_path();
@@ -180,28 +184,28 @@ int main()
     fs::path outputDir = exeDir / "Output";
     fs::create_directories(outputDir);
 
-    // Color PNG
-    std::cout << "Creating colour PNG (" << OUT_WIDTH << "x" << OUT_HEIGHT << ")...\n";
-    auto colorRGB = createColorRGB(raw);
-    if (!savePNG((outputDir / "HeightMap.png").string(), colorRGB, OUT_WIDTH, OUT_HEIGHT))
-    {
-        std::cout << "Press Enter to exit...";
-        std::cin.get();
-        return 1;
-    }
-    colorRGB.clear(); // free 6.4 GB
-
     // Grayscale PNG
-    std::cout << "Creating grayscale PNG...\n";
+    std::cout << "Creating grayscale PNG (" << OUT_WIDTH << "x" << OUT_HEIGHT << ")...\n";
     auto grayRGB = createGrayRGB(raw);
-    if (!savePNG((outputDir / "HeightMapGray.png").string(), grayRGB, OUT_WIDTH, OUT_HEIGHT))
+    if (!savePNG((outputDir / "GrayHeight.png").string(), grayRGB, OUT_WIDTH, OUT_HEIGHT))
+    {
+        std::cout << "Press Enter to exit...";
+        std::cin.get();
+        return 1;
+    }
+    grayRGB.clear();
+
+    // Colour PNG
+    std::cout << "Creating colour PNG...\n";
+    auto colorRGB = createColorRGB(raw);
+    if (!savePNG((outputDir / "ColorHeight.png").string(), colorRGB, OUT_WIDTH, OUT_HEIGHT))
     {
         std::cout << "Press Enter to exit...";
         std::cin.get();
         return 1;
     }
 
-    std::cout << "\nDone! Both full-resolution PNGs saved in " << outputDir.string() << "\n";
+    std::cout << "\nDone! PNGs saved in " << outputDir.string() << "\n";
     std::cout << "Press Enter to exit...";
     std::cin.get();
     return 0;
