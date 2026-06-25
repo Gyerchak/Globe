@@ -8,8 +8,8 @@
       "args": [],
       "stopAtEntry": false,
       "externalConsole": true,
-      "cwd": "c:/Globe/Code",
-      "program": "c:/Globe/Code/build/Debug/outDebug",
+      "cwd": "extension-output-ms-vscode.cpptools-#2-C",
+      "program": "extension-output-ms-vscode.cpptools-#2-C/build/Debug/outDebug",
       "MIMode": "gdb",
       "miDebuggerPath": "gdb",
       "setupCommands": [
