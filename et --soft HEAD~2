@@ -1,0 +1,206 @@
+[33me1ce6a4[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m Sync after fix
+ Data/GEBCO_2024.nc | Bin [31m3171051100[m -> [32m0[m bytes
+ 1 file changed, 0 insertions(+), 0 deletions(-)
+[33m7fe3b54[m Ignore Large File
+ .gitignore | 1 [32m+[m
+ 1 file changed, 1 insertion(+)
+[33m5ca9922[m Without .gitignore
+ .Old/0/cpp20.cpp                                                                    |   71 [32m++[m
+ .Old/0/game.cpp                                                                     |    0
+ .Old/0/main.cpp                                                                     |    1 [32m+[m
+ .Old/0/map_creator.cpp                                                              |  516 [32m++++++++++[m
+ .Old/0/map_viewer.cpp                                                               |  568 [32m+++++++++++[m
+ .Old/0/tempCodeRunnerFile.cpp                                                       |    1 [32m+[m
+ .Old/0/win64_platform.cpp                                                           |  394 [32m+++++++[m
+ .Old/1/BaseStaticMapCreator.cpp                                                     |  169 [32m+++[m
+ .Old/1/ColorPicker.cpp                                                              |  124 [32m+++[m
+ .Old/1/ColorPrinter.cpp                                                             |  205 [32m++++[m
+ .Old/1/ConstantBuildingsDataTableCreator.cpp                                        |   53 [32m+[m
+ .Old/1/ConstantInfrastructureMapCreator.cpp                                         |  119 [32m+++[m
+ .Old/1/ConstantProvincesMapCreator.cpp                                              |  232 [32m+++++[m
+ .Old/1/ConstantValuesMapCreator.cpp                                                 |  182 [32m++++[m
+ .Old/1/CurrentTickCounterClock.cpp                                                  |  229 [32m+++++[m
+ .Old/1/CurrentTickCounterClockDelay.cpp                                             |   98 [32m++[m
+ .Old/1/CyclicalDailyClimateMapCreator.cpp                                           |  155 [32m+++[m
+ .Old/1/CyclicalHourlyClimateMapCreator.cpp                                          |  165 [32m+++[m
+ .Old/1/CyclicalMonthlyLocalsMapCreator.cpp                                          |  178 [32m++++[m
+ .Old/1/EventualVolcanicRiverMapCreator.cpp                                          |  149 [32m+++[m
+ .Old/1/GameFiles/Graph/BuildingSum.txt                                              |    0
+ .Old/1/GameFiles/Graph/GoodsSum.txt                                                 |    0
+ .Old/1/GameFiles/Graph/NativeSum.txt                                                |    0
+ .Old/1/GameFiles/Graph/PopulationSum.txt                                            |    0
+ .Old/1/GameFiles/Graph/ResourcesSum.txt                                             |    0
+ .Old/1/GameFiles/Icons/People1.png                                                  |  Bin [31m0[m -> [32m1078503[m bytes
+ .Old/1/GameFiles/Icons/People10.png                                                 |  Bin [31m0[m -> [32m1007747[m bytes
+ .Old/1/GameFiles/Icons/People2.png                                                  |  Bin [31m0[m -> [32m450036[m bytes
+ .Old/1/GameFiles/Icons/People3.png                                                  |  Bin [31m0[m -> [32m245335[m bytes
+ .Old/1/GameFiles/Icons/People7.png                                                  |  Bin [31m0[m -> [32m188033[m bytes
+ .Old/1/GameFiles/Icons/People8.png                                                  |  Bin [31m0[m -> [32m1212511[m bytes
+ .Old/1/GameFiles/Icons/People9.png                                                  |  Bin [31m0[m -> [32m6693[m bytes
+ .Old/1/GameFiles/Icons/people4.png                                                  |  Bin [31m0[m -> [32m1404695[m bytes
+ .Old/1/GameFiles/Icons/people5.png                                                  |  Bin [31m0[m -> [32m9143113[m bytes
+ .Old/1/GameFiles/Icons/people6.png                                                  |  Bin [31m0[m -> [32m2537368[m bytes
+ .Old/1/GameFiles/Line/CurrentTime.txt                                               |    0
+ .Old/1/GameFiles/Line/Planet.txt                                                    |    0
+ .Old/1/GameFiles/Lines/Natives.txt                                                  |    0
+ .Old/1/GameFiles/Lines/Pops.txt                                                     |    0
+ .Old/1/GameFiles/Map/ConstantInfrastructure/InfrastructureMap.png                   |  Bin [31m0[m -> [32m279313[m bytes
+ .Old/1/GameFiles/Map/ConstantProvinces/CountryMap.png                               |  Bin [31m0[m -> [32m279313[m bytes
+ .Old/1/GameFiles/Map/ConstantProvinces/LocationMap.png                              |  Bin [31m0[m -> [32m284398[m bytes
+ .Old/1/GameFiles/Map/ConstantProvinces/ProvinceMap.png                              |  Bin [31m0[m -> [32m279313[m bytes
+ .Old/1/GameFiles/Map/ConstantValues/CapacityMap.png                                 |  Bin [31m0[m -> [32m279313[m bytes
+ .Old/1/GameFiles/Map/ConstantValues/ComfortMap.png                                  |  Bin [31m0[m -> [32m279313[m bytes
+ .Old/1/GameFiles/Map/ConstantValues/DevelopmentMap.png                              |  Bin [31m0[m -> [32m279313[m bytes
+ .Old/1/GameFiles/Map/ConstantValues/HealthMap.png                                   |  Bin [31m0[m -> [32m279313[m bytes
+ .Old/1/GameFiles/Map/ConstantValues/KnowledgeMap.png                                |  Bin [31m0[m -> [32m279313[m bytes
+ .Old/1/GameFiles/Map/ConstantValues/ProsperityMap.png                               |  Bin [31m0[m -> [32m279313[m bytes
+ .Old/1/GameFiles/Map/ConstantValues/SafetyMap.png                                   |  Bin [31m0[m -> [32m279313[m bytes
+ .Old/1/GameFiles/Map/ConstantValues/ScoreMap.png                                    |  Bin [31m0[m -> [32m279313[m bytes
+ .Old/1/GameFiles/Map/CyclicalClimate/DailyLocalSeasonMap.png                        |  Bin [31m0[m -> [32m279313[m bytes
+ .Old/1/GameFiles/Map/CyclicalClimate/DailyWeatherMap.png                            |  Bin [31m0[m -> [32m279313[m bytes
+ .Old/1/GameFiles/Map/CyclicalClimate/HourlyHumidityMap.png                          |  Bin [31m0[m -> [32m279313[m bytes
+ .Old/1/GameFiles/Map/CyclicalClimate/HourlyPressureMap.png                          |  Bin [31m0[m -> [32m279313[m bytes
+ .Old/1/GameFiles/Map/CyclicalClimate/HourlyTemperatureMap.png                       |  Bin [31m0[m -> [32m279313[m bytes
+ .Old/1/GameFiles/Map/CyclicalClimate/HourlyWindDirMap.png                           |  Bin [31m0[m -> [32m279313[m bytes
+ .Old/1/GameFiles/Map/CyclicalClimate/HourlyWindMap.png                              |  Bin [31m0[m -> [32m279313[m bytes
+ .Old/1/GameFiles/Map/CyclicalLocals/MonthlyLocalsNumMap.png                         |  Bin [31m0[m -> [32m279313[m bytes
+ .Old/1/GameFiles/Map/CyclicalLocals/MonthlyPopulationIdMap.png                      |  Bin [31m0[m -> [32m279794[m bytes
+ .Old/1/GameFiles/Map/Eventual/RiverMap.png                                          |  Bin [31m0[m -> [32m279313[m bytes
+ .Old/1/GameFiles/Map/Eventual/VolcanicMap.png                                       |  Bin [31m0[m -> [32m279313[m bytes
+ .Old/1/GameFiles/Map/Static/ClimateZoneMap.png                                      |  Bin [31m0[m -> [32m279313[m bytes
+ .Old/1/GameFiles/Map/Static/ContinentalityMap.png                                   |  Bin [31m0[m -> [32m279313[m bytes
+ .Old/1/GameFiles/Map/Static/CurrentsMap.png                                         |  Bin [31m0[m -> [32m279313[m bytes
+ .Old/1/GameFiles/Map/Static/ForestMap.png                                           |  Bin [31m0[m -> [32m279313[m bytes
+ .Old/1/GameFiles/Map/Static/HeightMap.png                                           |  Bin [31m0[m -> [32m27454852[m bytes
+ .Old/1/GameFiles/Map/Static/ResIdMap.png                                            |  Bin [31m0[m -> [32m279313[m bytes
+ .Old/1/GameFiles/Map/Static/ResNumMap.png                                           |  Bin [31m0[m -> [32m279313[m bytes
+ .Old/1/GameFiles/Map/Static/SoilMap.png                                             |  Bin [31m0[m -> [32m279313[m bytes
+ .Old/1/GameFiles/Map/Static/TopographicMap.png                                      |  Bin [31m0[m -> [32m279313[m bytes
+ .Old/1/GameFiles/Map/Static/WaterLandMap.png                                        |  Bin [31m0[m -> [32m807663[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/1BodyType/0.png                                       |  Bin [31m0[m -> [32m388[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/1BodyType/1.png                                       |  Bin [31m0[m -> [32m390[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/1BodyType/2.png                                       |  Bin [31m0[m -> [32m390[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/1BodyType/3.png                                       |  Bin [31m0[m -> [32m390[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/1BodyType/4.png                                       |  Bin [31m0[m -> [32m374[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/1BodyType/5.png                                       |  Bin [31m0[m -> [32m365[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/1BodyType/6.png                                       |  Bin [31m0[m -> [32m351[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/2Neck/0.png                                           |  Bin [31m0[m -> [32m272[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/2Neck/1.png                                           |  Bin [31m0[m -> [32m272[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/2Neck/2.png                                           |  Bin [31m0[m -> [32m251[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/2Neck/3.png                                           |  Bin [31m0[m -> [32m268[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/2Neck/4.png                                           |  Bin [31m0[m -> [32m251[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/2Neck/5.png                                           |  Bin [31m0[m -> [32m251[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/2Neck/6.png                                           |  Bin [31m0[m -> [32m251[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/3Jaw/0.png                                            |  Bin [31m0[m -> [32m296[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/3Jaw/1.png                                            |  Bin [31m0[m -> [32m283[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/3Jaw/2.png                                            |  Bin [31m0[m -> [32m294[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/3Jaw/3.png                                            |  Bin [31m0[m -> [32m311[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/3Jaw/4.png                                            |  Bin [31m0[m -> [32m330[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/3Jaw/5.png                                            |  Bin [31m0[m -> [32m337[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/3Jaw/6.png                                            |  Bin [31m0[m -> [32m328[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/4ChewBones/0.png                                      |  Bin [31m0[m -> [32m301[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/4ChewBones/1.png                                      |  Bin [31m0[m -> [32m315[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/4ChewBones/2.png                                      |  Bin [31m0[m -> [32m312[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/4ChewBones/3.png                                      |  Bin [31m0[m -> [32m310[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/4ChewBones/4.png                                      |  Bin [31m0[m -> [32m312[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/4ChewBones/5.png                                      |  Bin [31m0[m -> [32m306[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/4ChewBones/6.png                                      |  Bin [31m0[m -> [32m306[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/5ChickBones/0.png                                     |  Bin [31m0[m -> [32m372[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/5ChickBones/1.png                                     |  Bin [31m0[m -> [32m365[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/5ChickBones/2.png                                     |  Bin [31m0[m -> [32m362[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/5ChickBones/3.png                                     |  Bin [31m0[m -> [32m359[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/5ChickBones/4.png                                     |  Bin [31m0[m -> [32m353[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/5ChickBones/5.png                                     |  Bin [31m0[m -> [32m358[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/5ChickBones/6.png                                     |  Bin [31m0[m -> [32m344[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/6ForeHead/0.png                                       |  Bin [31m0[m -> [32m345[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/6ForeHead/1.png                                       |  Bin [31m0[m -> [32m332[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/6ForeHead/2.png                                       |  Bin [31m0[m -> [32m320[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/6ForeHead/3.png                                       |  Bin [31m0[m -> [32m321[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/6ForeHead/4.png                                       |  Bin [31m0[m -> [32m316[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/6ForeHead/5.png                                       |  Bin [31m0[m -> [32m338[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/6ForeHead/6.png                                       |  Bin [31m0[m -> [32m334[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/7HeadBack/0.png                                       |  Bin [31m0[m -> [32m347[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/7HeadBack/1.png                                       |  Bin [31m0[m -> [32m343[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/7HeadBack/2.png                                       |  Bin [31m0[m -> [32m364[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/7HeadBack/3.png                                       |  Bin [31m0[m -> [32m359[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/7HeadBack/4.png                                       |  Bin [31m0[m -> [32m390[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/7HeadBack/5.png                                       |  Bin [31m0[m -> [32m393[m bytes
+ .Old/1/GameFiles/Npc/0TooMuch/7HeadBack/6.png                                       |  Bin [31m0[m -> [32m414[m bytes
+ .Old/1/GameFiles/Npc/1BodyType/0.png                                                |  Bin [31m0[m -> [32m326[m bytes
+ .Old/1/GameFiles/Npc/1BodyType/3.png                                                |  Bin [31m0[m -> [32m330[m bytes
+ .Old/1/GameFiles/Npc/1BodyType/6.png                                                |  Bin [31m0[m -> [32m292[m bytes
+ .Old/1/GameFiles/Npc/2Jaw/0.png                                                     |  Bin [31m0[m -> [32m209[m bytes
+ .Old/1/GameFiles/Npc/2Jaw/3.png                                                     |  Bin [31m0[m -> [32m234[m bytes
+ .Old/1/GameFiles/Npc/2Jaw/6.png                                                     |  Bin [31m0[m -> [32m246[m bytes
+ .Old/1/GameFiles/Npc/3ChewBones/0.png                                               |  Bin [31m0[m -> [32m228[m bytes
+ .Old/1/GameFiles/Npc/3ChewBones/3.png                                               |  Bin [31m0[m -> [32m239[m bytes
+ .Old/1/GameFiles/Npc/3ChewBones/6.png                                               |  Bin [31m0[m -> [32m254[m bytes
+ .Old/1/GameFiles/Npc/4ChickBones/0.png                                              |  Bin [31m0[m -> [32m302[m bytes
+ .Old/1/GameFiles/Npc/4ChickBones/3.png                                              |  Bin [31m0[m -> [32m307[m bytes
+ .Old/1/GameFiles/Npc/4ChickBones/6.png                                              |  Bin [31m0[m -> [32m329[m bytes
+ .Old/1/GameFiles/Npc/5ForeHead/0.png                                                |  Bin [31m0[m -> [32m295[m bytes
+ .Old/1/GameFiles/Npc/5ForeHead/3.png                                                |  Bin [31m0[m -> [32m266[m bytes
+ .Old/1/GameFiles/Npc/5ForeHead/6.png                                                |  Bin [31m0[m -> [32m289[m bytes
+ .Old/1/GameFiles/Npc/6HeadBack/0.png                                                |  Bin [31m0[m -> [32m269[m bytes
+ .Old/1/GameFiles/Npc/6HeadBack/3.png                                                |  Bin [31m0[m -> [32m299[m bytes
+ .Old/1/GameFiles/Npc/6HeadBack/6.png                                                |  Bin [31m0[m -> [32m340[m bytes
+ .Old/1/GameFiles/Npc/7SkinPigments/0.png                                            |  Bin [31m0[m -> [32m217[m bytes
+ .Old/1/GameFiles/Npc/7SkinPigments/1.png                                            |  Bin [31m0[m -> [32m217[m bytes
+ .Old/1/GameFiles/Npc/7SkinPigments/10.png                                           |  Bin [31m0[m -> [32m219[m bytes
+ .Old/1/GameFiles/Npc/7SkinPigments/11.png                                           |  Bin [31m0[m -> [32m219[m bytes
+ .Old/1/GameFiles/Npc/7SkinPigments/12.png                                           |  Bin [31m0[m -> [32m219[m bytes
+ .Old/1/GameFiles/Npc/7SkinPigments/13.png                                           |  Bin [31m0[m -> [32m219[m bytes
+ .Old/1/GameFiles/Npc/7SkinPigments/14.png                                           |  Bin [31m0[m -> [32m219[m bytes
+ .Old/1/GameFiles/Npc/7SkinPigments/15.png                                           |  Bin [31m0[m -> [32m219[m bytes
+ .Old/1/GameFiles/Npc/7SkinPigments/16.png                                           |  Bin [31m0[m -> [32m219[m bytes
+ .Old/1/GameFiles/Npc/7SkinPigments/17.png                                           |  Bin [31m0[m -> [32m219[m bytes
+ .Old/1/GameFiles/Npc/7SkinPigments/18.png                                           |  Bin [31m0[m -> [32m219[m bytes
+ .Old/1/GameFiles/Npc/7SkinPigments/19.png                                           |  Bin [31m0[m -> [32m219[m bytes
+ .Old/1/GameFiles/Npc/7SkinPigments/2.png                                            |  Bin [31m0[m -> [32m224[m bytes
+ .Old/1/GameFiles/Npc/7SkinPigments/20.png                                           |  Bin [31m0[m -> [32m219[m bytes
+ .Old/1/GameFiles/Npc/7SkinPigments/21.png                                           |  Bin [31m0[m -> [32m219[m bytes
+ .Old/1/GameFiles/Npc/7SkinPigments/22.png                                           |  Bin [31m0[m -> [32m219[m bytes
+ .Old/1/GameFiles/Npc/7SkinPigments/23.png                                           |  Bin [31m0[m -> [32m219[m bytes
+ .Old/1/GameFiles/Npc/7SkinPigments/24.png                                           |  Bin [31m0[m -> [32m219[m bytes
+ .Old/1/GameFiles/Npc/7SkinPigments/25.png                                           |  Bin [31m0[m -> [32m219[m bytes
+ .Old/1/GameFiles/Npc/7SkinPigments/3.png                                            |  Bin [31m0[m -> [32m219[m bytes
+ .Old/1/GameFiles/Npc/7SkinPigments/4.png                                            |  Bin [31m0[m -> [32m224[m bytes
+ .Old/1/GameFiles/Npc/7SkinPigments/5.png                                            |  Bin [31m0[m -> [32m219[m bytes
+ .Old/1/GameFiles/Npc/7SkinPigments/6.png                                            |  Bin [31m0[m -> [32m219[m bytes
+ .Old/1/GameFiles/Npc/7SkinPigments/7.png                                            |  Bin [31m0[m -> [32m219[m bytes
+ .Old/1/GameFiles/Npc/7SkinPigments/8.png                                            |  Bin [31m0[m -> [32m219[m bytes
+ .Old/1/GameFiles/Npc/7SkinPigments/9.png                                            |  Bin [31m0[m -> [32m219[m bytes
+ .Old/1/GameFiles/Npc/7SkinPigments/RGB+72or+36or0or-36or-72dependingongeography.txt |    0
+ .Old/1/GameFiles/Palletes/1SkinPallete.png                                          |  Bin [31m0[m -> [32m2709[m bytes
+ .Old/1/GameFiles/Palletes/1SkinPallete.txt                                          |    3 [32m+[m
+ .Old/1/GameFiles/Table/Country/Countries.txt                                        |    0
+ .Old/1/GameFiles/Table/Country/MonthlyScoreBoard.txt                                |    0
+ .Old/1/GameFiles/Table/Country/ProvinceNativeSum.txt                                |    0
+ .Old/1/GameFiles/Table/Country/ProvinceProductionSum.txt                            |    0
+ .Old/1/GameFiles/Table/Country/ProvinceResourceSum.txt                              |    0
+ .Old/1/GameFiles/Table/Country/ProvinceTrade.txt                                    |    0
+ .Old/1/GameFiles/Table/Country/Provinces.txt                                        |    0
+ .Old/1/GameFiles/Table/GlobalEconomy/Economy.txt                                    |    0
+ .Old/1/GameFiles/Table/GlobalEconomy/Trade.txt                                      |    0
+ .Old/1/GameFiles/Table/Planet/Earth.txt                                             |    0
+ .Old/1/GameFiles/Table/Planet/Moon.txt                                              |    0
+ .Old/1/GameFiles/Table/Planet/Sun.txt                                               |    0
+ .Old/1/GlobeViewer.cpp                                                              |  596 [32m+++++++++++[m
+ .Old/1/IconCreator.cpp                                                              |  183 [32m++++[m
+ .Old/1/IconViewer.cpp                                                               |  207 [32m++++[m
+ .Old/1/NpcIconCreator.cpp                                                           |  349 [32m+++++++[m
+ .Old/1/NpcIconViewer.cpp                                                            |  212 [32m++++[m
+ .gitignore                                                                          |   80 [31m--[m
+ 4DeepSeek/Code4Deepseek.txt                                                         | 1178 [32m+++++++++++++++++++++[m
+ 4DeepSeek/Dir4Deepseek.txt                                                          |   47 [32m+[m
+ 4DeepSeek/GameCode4Deepseek.txt                                                     |    4 [32m+[m
+ 4DeepSeek/OldCode0.txt                                                              |   83 [32m++[m
+ 4DeepSeek/OldCode1.txt                                                              | 2117 [32m++++++++++++++++++++++++++++++++++++++[m
+ 4DeepSeek/OldDir4Deepseek.txt                                                       |  228 [32m+++++[m
+ 4DeepSeek/SourceCode4Deepseek.txt                                                   | 9747 [32m+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++[m
+ Data/GEBCO_2024.nc                                                                  |  Bin [31m0[m -> [32m3171051100[m bytes
+ Data4Deepseek.exe                                                                   |  Bin [31m0[m -> [32m3750322[m bytes
+ Executables/BitMapViewer.exe                                                        |  Bin [31m0[m -> [32m3372104[m bytes
+ Executables/CompressHeightMap.exe                                                   |  Bin [31m0[m -> [32m3562491[m bytes
+ Executables/readmap.exe                                                             |  Bin [31m0[m -> [32m4957808[m bytes
+ 198 files changed, 18563 insertions(+), 80 deletions(-)

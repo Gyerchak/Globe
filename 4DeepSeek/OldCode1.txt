@@ -1,0 +1,2117 @@
+============================================================================
+ CONTENTS OF FILES FROM .Old/1/ (size < 2 MB) (175 files)
+============================================================================
+
+================================================================================
+ FILE: BaseStaticMapCreator.cpp
+================================================================================
+#include <cstdint>
+#include <cstdio>
+#include <string>
+#include <vector>
+#include <iostream>
+#include <filesystem>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
+using u32 = uint32_t;
+using u64 = uint64_t;
+
+static bool load_red_channel(const std::string &path,
+                             std::vector<u32> &out,
+                             int &width, int &height)
+{
+    int w = 0, h = 0, c = 0;
+    unsigned char *data = stbi_load(path.c_str(), &w, &h, &c, 4);
+    if (!data)
+        return false;
+    out.resize((size_t)w * (size_t)h);
+    for (size_t i = 0; i < (size_t)w * (size_t)h; ++i)
+        out[i] = (u32)data[i * 4];
+    stbi_image_free(data);
+    width = w;
+    height = h;
+    return true;
+}
+
+static void write_binary(const std::filesystem::path &out,
+                         int width, int height,
+                         const std::vector<u64> &values)
+{
+    FILE *f = std::fopen(out.string().c_str(), "wb");
+    if (!f)
+    {
+        std::perror("fopen");
+        return;
+    }
+    std::fwrite(values.data(), sizeof(u64), values.size(), f);
+    std::fclose(f);
+}
+
+int main(int argc, char **argv)
+{
+    const int EXPECTED_W = 8192;
+    const int EXPECTED_H = 8192;
+
+    std::string names[10] = {
+        "WaterLandMap.png",
+        "HeightMap.png",
+        "TopographicMap.png",
+        "ContinentalityMap.png",
+        "CurrentsMap.png",
+        "ClimateZoneMap.png",
+        "ResIdMap.png",
+        "ResNumMap.png",
+        "ForestMap.png",
+        "SoilMap.png"};
+
+    int max_vals[10] = {
+        3,   // WaterLand now 2 bits (0-3)
+        255, // Height
+        7,   // Topographic
+        255, // Continentality
+        7,   // Currents
+        7,   // ClimateZone
+        31,  // ResID
+        3,   // ResNum
+        3,   // Forest
+        3    // Soil
+    };
+
+    std::string folder;
+    std::string output_path;
+
+    if (argc == 1)
+    {
+        folder = "GameFiles/Map/Static";
+        output_path = "GameData/Map/BaseStaticMap.bin";
+    }
+    else if (argc == 12)
+    {
+        folder = "";
+        for (int i = 0; i < 10; ++i)
+            names[i] = argv[1 + i];
+        output_path = argv[11];
+    }
+    else
+    {
+        std::fprintf(stderr,
+                     "Usage: %s [waterland.png height.png topographic.png continentality.png "
+                     "currents.png climatezone.png resid.png resnum.png forest.png soil.png output.bin]\n",
+                     argv[0]);
+        std::printf("\nPress Enter to exit...\n");
+        std::getchar();
+        return 1;
+    }
+
+    std::vector<u32> maps[10];
+    int width = 0, height = 0;
+
+    for (int i = 0; i < 10; ++i)
+    {
+        std::string fullPath = folder.empty() ? names[i] : folder + "/" + names[i];
+        int w = 0, h = 0;
+        if (!load_red_channel(fullPath, maps[i], w, h))
+        {
+            std::fprintf(stderr, "Failed to load %s\n", fullPath.c_str());
+            std::printf("\nPress Enter to exit...\n");
+            std::getchar();
+            return 2;
+        }
+        if (w != EXPECTED_W || h != EXPECTED_H)
+        {
+            std::fprintf(stderr,
+                         "Size mismatch: %s is %dx%d, expected %dx%d\n",
+                         fullPath.c_str(), w, h, EXPECTED_W, EXPECTED_H);
+            std::printf("\nPress Enter to exit...\n");
+            std::getchar();
+            return 3;
+        }
+        if (i == 0)
+        {
+            width = w;
+            height = h;
+        }
+    }
+
+    size_t pixelCount = (size_t)width * height;
+    std::vector<u64> out(pixelCount);
+
+    for (size_t i = 0; i < pixelCount; ++i)
+    {
+        int x = (int)(i % width);
+        int y = (int)(i / width);
+
+        auto scale = [&](u32 red, int max_val) -> u64
+        {
+            if (max_val == 255)
+                return (u64)(red & 0xFF);
+            return (u64)((red * (unsigned)max_val + 127u) / 255u);
+        };
+
+        u64 val = 0;
+        val |= (u64(x) & 0x1FFFu) << 51;
+        val |= (u64(y) & 0x1FFFu) << 38;
+        val |= scale(maps[0][i], max_vals[0]) << 36; // WaterLand (2 bits)
+        val |= scale(maps[1][i], max_vals[1]) << 28; // Height
+        val |= scale(maps[2][i], max_vals[2]) << 25; // Topographic
+        val |= scale(maps[3][i], max_vals[3]) << 17; // Continentality
+        val |= scale(maps[4][i], max_vals[4]) << 14; // Currents
+        val |= scale(maps[5][i], max_vals[5]) << 11; // ClimateZone
+        val |= scale(maps[6][i], max_vals[6]) << 6;  // ResID
+        val |= scale(maps[7][i], max_vals[7]) << 4;  // ResNum
+        val |= scale(maps[8][i], max_vals[8]) << 2;  // Forest
+        val |= scale(maps[9][i], max_vals[9]) << 0;  // Soil
+
+        out[i] = val;
+    }
+
+    write_binary(output_path, width, height, out);
+    std::printf("Wrote %zu pixels to %s\n", pixelCount, output_path.c_str());
+
+    std::printf("\nPress Enter to exit...\n");
+    std::getchar();
+    return 0;
+}
+
+================================================================================
+ FILE: ColorPicker.cpp
+================================================================================
+/**
+ * ColorPicker – extract & snap unique colours from PNG palettes
+ * ==============================================================
+ * Input folder:   GameFiles/Palletes/*.png
+ * Output:         GameFiles/Palletes/*.txt  (same base name)
+ *
+ * Each pixel's RGB channel is snapped to the nearest value in
+ * {0, 36, 72, 144, 180, 216, 252}.  Only unique colours are saved.
+ * Pure white (255;255;255) is ignored entirely.
+ *
+ * Compile (any shell, stb_image.h in same folder):
+ *   g++ -std=c++20 -O2 -static -o ColorPicker.exe ColorPicker.cpp
+ */
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
+#include <cstdint>
+#include <vector>
+#include <set>
+#include <string>
+#include <filesystem>
+#include <iostream>
+#include <fstream>
+#include <cmath>
+#include <algorithm>
+
+// Allowed palette
+constexpr int ALLOWED[] = {0, 36, 72, 144, 180, 216, 252};
+constexpr int NUM_ALLOWED = sizeof(ALLOWED) / sizeof(ALLOWED[0]);
+
+// Snap a single 0‑255 channel to the nearest allowed value
+int snap_to_allowed(int val)
+{
+    int best = ALLOWED[0];
+    int bestDist = std::abs(val - ALLOWED[0]);
+    for (int i = 1; i < NUM_ALLOWED; ++i)
+    {
+        int d = std::abs(val - ALLOWED[i]);
+        if (d < bestDist)
+        {
+            bestDist = d;
+            best = ALLOWED[i];
+        }
+    }
+    return best;
+}
+
+int main()
+{
+    const std::string inputDir = "GameFiles/Palletes";
+
+    if (!std::filesystem::exists(inputDir))
+    {
+        std::cerr << "Folder " << inputDir << " does not exist.\n";
+        return 1;
+    }
+
+    int filesProcessed = 0;
+
+    for (const auto &entry : std::filesystem::directory_iterator(inputDir))
+    {
+        if (entry.path().extension() != ".png")
+            continue;
+
+        std::string pngPath = entry.path().string();
+        std::cout << "Processing " << pngPath << " ... ";
+
+        int w, h, channels;
+        unsigned char *data = stbi_load(pngPath.c_str(), &w, &h, &channels, 4); // force RGBA
+        if (!data)
+        {
+            std::cerr << "FAILED to load.\n";
+            continue;
+        }
+
+        // Collect unique snapped colours
+        std::set<std::tuple<int, int, int>> uniqueColors;
+        for (int i = 0; i < w * h; ++i)
+        {
+            int r = data[i * 4 + 0];
+            int g = data[i * 4 + 1];
+            int b = data[i * 4 + 2];
+
+            // Skip pure white (255,255,255)
+            if (r == 255 && g == 255 && b == 255)
+                continue;
+
+            // snap each channel
+            r = snap_to_allowed(r);
+            g = snap_to_allowed(g);
+            b = snap_to_allowed(b);
+
+            uniqueColors.emplace(r, g, b);
+        }
+
+        stbi_image_free(data);
+
+        // Write to .txt file (same name, .txt extension)
+        std::filesystem::path txtPath = entry.path();
+        txtPath.replace_extension(".txt");
+        std::ofstream out(txtPath);
+        if (!out)
+        {
+            std::cerr << "FAILED to write output.\n";
+            continue;
+        }
+
+        for (const auto &[r, g, b] : uniqueColors)
+        {
+            out << r << ";" << g << ";" << b << "\n";
+        }
+        out.close();
+
+        std::cout << uniqueColors.size() << " unique colours saved to "
+                  << txtPath.filename().string() << "\n";
+        ++filesProcessed;
+    }
+
+    std::cout << "\nDone. Processed " << filesProcessed << " PNG files.\n";
+    std::cout << "Press Enter to exit...\n";
+    std::cin.get();
+    return 0;
+}
+
+================================================================================
+ FILE: ColorPrinter.cpp
+================================================================================
+/**
+ * ColorPrinter – MYK mixing of ALL triples from external palette file
+ * ===================================================================
+ * Reads ALL base colours from GameFiles/Palletes/1SkinPallete.txt
+ * (one "R;G;B" per line).  For every combination of 3 distinct colours,
+ * mixes them in MYK space (C=0) with weights 0‑6, converts back to RGB,
+ * snaps to {0,36,72,144,180,216,252}, and saves the unique results as 64×64 PNGs.
+ *
+ * Output folder: GameFiles/Npc/7SkinPigments/
+ *
+ * Compile (any shell, stb_image_write.h in same folder):
+ *   g++ -std=c++20 -O2 -static -o ColorPrinter.exe ColorPrinter.cpp
+ */
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
+#include <cstdint>
+#include <vector>
+#include <set>
+#include <string>
+#include <filesystem>
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <cmath>
+#include <algorithm>
+
+// Allowed palette
+constexpr int ALLOWED[] = {0, 36, 72, 144, 180, 216, 252};
+constexpr int NUM_ALLOWED = sizeof(ALLOWED) / sizeof(ALLOWED[0]);
+
+int snap_to_allowed(int val)
+{
+    int best = ALLOWED[0];
+    int bestDist = std::abs(val - ALLOWED[0]);
+    for (int i = 1; i < NUM_ALLOWED; ++i)
+    {
+        int d = std::abs(val - ALLOWED[i]);
+        if (d < bestDist)
+        {
+            bestDist = d;
+            best = ALLOWED[i];
+        }
+    }
+    return best;
+}
+
+int clamp255(int x) { return std::max(0, std::min(255, x)); }
+
+// ------------------------------------------------------------------
+//  RGB ↔ MYK conversion (Cyan = 0) – identical to early versions
+// ------------------------------------------------------------------
+struct MYK
+{
+    double m, y, k;
+};
+
+MYK rgb_to_myk(int r, int g, int b)
+{
+    double k = 255.0 - r;
+    double m, y;
+    if (r > 0)
+    {
+        m = 255.0 - (g * 255.0) / r;
+        y = 255.0 - (b * 255.0) / r;
+    }
+    else
+    {
+        m = 255.0;
+        y = 255.0;
+    }
+    m = clamp255((int)std::round(m));
+    y = clamp255((int)std::round(y));
+    k = clamp255((int)std::round(k));
+    return {m, y, k};
+}
+
+std::tuple<int, int, int> myk_to_rgb(double m, double y, double k)
+{
+    double r = 255.0 - k;
+    double g = (255.0 - m) * (255.0 - k) / 255.0;
+    double b = (255.0 - y) * (255.0 - k) / 255.0;
+    int ri = clamp255((int)std::round(r));
+    int gi = clamp255((int)std::round(g));
+    int bi = clamp255((int)std::round(b));
+    return {ri, gi, bi};
+}
+
+// ------------------------------------------------------------------
+int main()
+{
+    // ----- 1. Read ALL base colours from file -----
+    const std::string palettePath = "GameFiles/Palletes/1SkinPallete.txt";
+    std::ifstream file(palettePath);
+    if (!file)
+    {
+        std::cerr << "Cannot open " << palettePath << "\n";
+        return 1;
+    }
+
+    std::vector<std::tuple<int, int, int>> baseColors;
+    std::string line;
+    while (std::getline(file, line))
+    {
+        if (line.empty())
+            continue;
+        std::stringstream ss(line);
+        int r, g, b;
+        char sep1, sep2;
+        if (ss >> r >> sep1 >> g >> sep2 >> b && sep1 == ';' && sep2 == ';')
+        {
+            baseColors.emplace_back(r, g, b);
+        }
+    }
+    file.close();
+
+    if (baseColors.size() < 3)
+    {
+        std::cerr << "Need at least 3 base colours, got " << baseColors.size() << "\n";
+        return 1;
+    }
+
+    std::cout << "Loaded " << baseColors.size() << " base colours.\n";
+    std::cout << "Will mix every combination of 3 colours (MYK space, no Cyan).\n";
+
+    // Pre‑convert all base colours to MYK
+    std::vector<MYK> baseMYK;
+    for (auto [r, g, b] : baseColors)
+    {
+        baseMYK.push_back(rgb_to_myk(r, g, b));
+    }
+
+    // ----- 2. Mix every triple -----
+    std::set<std::tuple<int, int, int>> uniqueColors;
+    size_t tripleCount = 0;
+
+    for (size_t i = 0; i < baseColors.size(); ++i)
+    {
+        for (size_t j = i + 1; j < baseColors.size(); ++j)
+        {
+            for (size_t k = j + 1; k < baseColors.size(); ++k)
+            {
+                tripleCount++;
+                // Weighted mixing for this triple
+                for (int w1 = 0; w1 <= 6; ++w1)
+                {
+                    for (int w2 = 0; w2 <= 6; ++w2)
+                    {
+                        for (int w3 = 0; w3 <= 6; ++w3)
+                        {
+                            int sum = w1 + w2 + w3;
+                            if (sum == 0)
+                                continue;
+
+                            double mixedM = (w1 * baseMYK[i].m + w2 * baseMYK[j].m + w3 * baseMYK[k].m) / sum;
+                            double mixedY = (w1 * baseMYK[i].y + w2 * baseMYK[j].y + w3 * baseMYK[k].y) / sum;
+                            double mixedK = (w1 * baseMYK[i].k + w2 * baseMYK[j].k + w3 * baseMYK[k].k) / sum;
+
+                            auto [r, g, b] = myk_to_rgb(mixedM, mixedY, mixedK);
+                            r = snap_to_allowed(r);
+                            g = snap_to_allowed(g);
+                            b = snap_to_allowed(b);
+                            uniqueColors.emplace(r, g, b);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    std::cout << "Processed " << tripleCount << " triples.\n";
+    std::cout << "Unique mixed colours: " << uniqueColors.size() << "\n";
+
+    // ----- 3. Write PNGs -----
+    std::filesystem::path outDir = "GameFiles/Npc/7SkinPigments";
+    std::filesystem::create_directories(outDir);
+
+    constexpr int W = 64, H = 64, CH = 3;
+    std::vector<uint8_t> pixels(W * H * CH);
+
+    size_t idx = 0;
+    for (const auto &[r, g, b] : uniqueColors)
+    {
+        for (int p = 0; p < W * H; ++p)
+        {
+            pixels[p * CH + 0] = (uint8_t)r;
+            pixels[p * CH + 1] = (uint8_t)g;
+            pixels[p * CH + 2] = (uint8_t)b;
+        }
+        std::string filename = (outDir / (std::to_string(idx) + ".png")).string();
+        if (!stbi_write_png(filename.c_str(), W, H, CH, pixels.data(), W * CH))
+        {
+            std::cerr << "Failed to write " << filename << "\n";
+            return 1;
+        }
+        ++idx;
+    }
+
+    std::cout << "\nAll " << uniqueColors.size() << " PNGs written to "
+              << std::filesystem::absolute(outDir) << "\n";
+    std::cout << "Press Enter to exit...\n";
+    std::cin.get();
+    return 0;
+}
+
+================================================================================
+ FILE: ConstantBuildingsDataTableCreator.cpp
+================================================================================
+/**
+ * ConstantBuildingsDataTableCreator – Buildings × Province lookup (16‑bit province)
+ * ---------------------------------------------------------------------------------
+ * 65536 provinces × 256 buildings × 1 byte = 16 MiB.
+ * All entries initialised to 0.
+ */
+
+#include <cstdint>
+#include <cstdio>
+#include <string>
+#include <iostream>
+#include <fstream>
+
+int main(int argc, char **argv)
+{
+    std::string output_path;
+    if (argc == 1)
+    {
+        output_path = "GameData/RgTable/BuildingsData.bin";
+    }
+    else
+    {
+        std::fprintf(stderr, "Usage: %s  (auto‑mode only)\n", argv[0]);
+        std::printf("\nPress Enter to exit...\n");
+        std::getchar();
+        return 1;
+    }
+
+    const uint32_t NUM_PROVINCES = 1U << 16; // 65536
+    const uint32_t NUM_BUILDINGS = 256;
+    const uint64_t TOTAL_BYTES = (uint64_t)NUM_PROVINCES * NUM_BUILDINGS; // 16 MiB
+
+    std::ofstream out(output_path, std::ios::binary);
+    if (!out)
+    {
+        std::perror("Cannot open output file");
+        std::printf("\nPress Enter to exit...\n");
+        std::getchar();
+        return 1;
+    }
+
+    // Write all provinces silently – the file is small
+    const uint8_t zeroBlock[256] = {0};
+    for (uint32_t province = 0; province < NUM_PROVINCES; ++province)
+        out.write(reinterpret_cast<const char *>(zeroBlock), sizeof(zeroBlock));
+
+    out.close();
+    std::printf("Wrote %llu bytes to %s\n",
+                (unsigned long long)TOTAL_BYTES, output_path.c_str());
+    std::printf("\nPress Enter to exit...\n");
+    std::getchar();
+    return 0;
+}
+
+================================================================================
+ FILE: ConstantInfrastructureMapCreator.cpp
+================================================================================
+/**
+ * ConstantInfrastructureMapCreator – 4‑bit per‑pixel infrastructure data
+ * ----------------------------------------------------------------------
+ * Reads InfrastructureMap.png (Red channel, scaled to 0‑15) and writes
+ * a packed binary where each byte contains two consecutive 4‑bit values
+ * (first pixel in low nibble, second pixel in high nibble).
+ *
+ * Auto‑mode expects the PNG in:
+ *   GameFiles/Map/ConstantInfrastructure/
+ *
+ * Manual mode:
+ *   ConstantInfrastructureMapCreator.exe infra.png output.bin
+ */
+
+#include <cstdint>
+#include <cstdio>
+#include <string>
+#include <vector>
+#include <iostream>
+#include <fstream>
+#include <filesystem>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
+using u32 = uint32_t;
+using u8 = uint8_t;
+
+static bool load_red_channel(const std::string &path, std::vector<u32> &out,
+                             int &width, int &height)
+{
+    int w = 0, h = 0, c = 0;
+    unsigned char *data = stbi_load(path.c_str(), &w, &h, &c, 4);
+    if (!data)
+        return false;
+    out.resize((size_t)w * h);
+    for (size_t i = 0; i < (size_t)w * h; ++i)
+        out[i] = (u32)data[i * 4 + 0];
+    stbi_image_free(data);
+    width = w;
+    height = h;
+    return true;
+}
+
+static void write_binary(const std::filesystem::path &out_path,
+                         int width, int height, const std::vector<u8> &packed)
+{
+    FILE *f = std::fopen(out_path.string().c_str(), "wb");
+    if (!f)
+    {
+        std::perror("fopen");
+        return;
+    }
+    std::fwrite(packed.data(), sizeof(u8), packed.size(), f);
+    std::fclose(f);
+}
+
+int main(int argc, char **argv)
+{
+    const int EXPECTED_W = 8192;
+    const int EXPECTED_H = 8192;
+
+    std::string inputPath;
+    std::string output_path;
+    std::string folder;
+
+    if (argc == 1)
+    {
+        folder = "GameFiles/Map/ConstantInfrastructure";
+        inputPath = folder + "/InfrastructureMap.png";
+        output_path = "GameData/Map/ConstantInfrastructureMap.bin";
+    }
+    else if (argc == 3)
+    {
+        inputPath = argv[1];
+        output_path = argv[2];
+    }
+    else
+    {
+        std::fprintf(stderr, "Usage: %s [infra.png output.bin]\n", argv[0]);
+        std::printf("\nPress Enter to exit...\n");
+        std::getchar();
+        return 1;
+    }
+
+    std::vector<u32> raw;
+    int width = 0, height = 0;
+    if (!load_red_channel(inputPath, raw, width, height))
+    {
+        std::fprintf(stderr, "Failed to load %s\n", inputPath.c_str());
+        std::printf("\nPress Enter to exit...\n");
+        std::getchar();
+        return 2;
+    }
+    if (width != EXPECTED_W || height != EXPECTED_H)
+    {
+        std::fprintf(stderr, "Size mismatch: %s is %dx%d, expected %dx%d\n",
+                     inputPath.c_str(), width, height, EXPECTED_W, EXPECTED_H);
+        std::printf("\nPress Enter to exit...\n");
+        std::getchar();
+        return 3;
+    }
+
+    size_t pixelCount = (size_t)width * height; // even number guaranteed
+    std::vector<u8> packed(pixelCount / 2);     // 2 pixels per byte
+
+    for (size_t i = 0; i < pixelCount; i += 2)
+    {
+        u8 infra1 = (u8)((raw[i] * 15u + 127u) / 255u);     // 0‑15
+        u8 infra2 = (u8)((raw[i + 1] * 15u + 127u) / 255u); // 0‑15
+        packed[i / 2] = (infra2 << 4) | infra1;             // first pixel in low nibble
+    }
+
+    write_binary(output_path, width, height, packed);
+    std::printf("Wrote %zu bytes to %s\n", packed.size(), output_path.c_str());
+    std::printf("\nPress Enter to exit...\n");
+    std::getchar();
+    return 0;
+}
+
+================================================================================
+ FILE: ConstantProvincesMapCreator.cpp
+================================================================================
+/**
+ * ConstantProvincesMapCreator – 64‑bit per‑pixel province + country + location
+ * ----------------------------------------------------------------------------
+ * Reads three 8192×8192 PNGs:
+ *   ProvinceMap.png (Red+Green → 16‑bit Province)
+ *   CountryMap.png  (Red → 8‑bit Country)
+ *   LocationMap.png (Red → LocationType 4‑bit, Green+Blue → LocationLevel 10‑bit)
+ *
+ * LocalisationX and LocalisationY are initialised to 0.
+ *
+ * Output: GameData/Map/ConstantProvincesMap.bin (512 MiB)
+ *
+ * Auto‑mode expects the PNGs in:
+ *   GameFiles/Map/ConstantProvinces/
+ */
+
+#include <cstdint>
+#include <cstdio>
+#include <vector>
+#include <string>
+#include <iostream>
+#include <fstream>
+#include <filesystem>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
+using u64 = uint64_t;
+using u32 = uint32_t;
+using u16 = uint16_t;
+using u8 = uint8_t;
+
+// Load Province as 16‑bit from Red+Green channels
+static bool load_rg_to_u16(const std::string &path, std::vector<u16> &out,
+                           int &width, int &height)
+{
+    int w = 0, h = 0, c = 0;
+    unsigned char *data = stbi_load(path.c_str(), &w, &h, &c, 4);
+    if (!data)
+        return false;
+    out.resize((size_t)w * h);
+    for (size_t i = 0; i < (size_t)w * h; ++i)
+    {
+        unsigned char r = data[i * 4 + 0];
+        unsigned char g = data[i * 4 + 1];
+        out[i] = ((u16)r << 8) | (u16)g;
+    }
+    stbi_image_free(data);
+    width = w;
+    height = h;
+    return true;
+}
+
+// Load a single channel (Red) as 8‑bit values
+static bool load_red_channel(const std::string &path, std::vector<u8> &out,
+                             int &width, int &height)
+{
+    int w = 0, h = 0, c = 0;
+    unsigned char *data = stbi_load(path.c_str(), &w, &h, &c, 4);
+    if (!data)
+        return false;
+    out.resize((size_t)w * h);
+    for (size_t i = 0; i < (size_t)w * h; ++i)
+        out[i] = (u8)data[i * 4 + 0];
+    stbi_image_free(data);
+    width = w;
+    height = h;
+    return true;
+}
+
+// Load Red, Green, and Blue channels from a PNG
+static bool load_rgb_channels(const std::string &path,
+                              std::vector<u32> &red,
+                              std::vector<u32> &green,
+                              std::vector<u32> &blue,
+                              int &width, int &height)
+{
+    int w = 0, h = 0, c = 0;
+    unsigned char *data = stbi_load(path.c_str(), &w, &h, &c, 4);
+    if (!data)
+        return false;
+    size_t count = (size_t)w * h;
+    red.resize(count);
+    green.resize(count);
+    blue.resize(count);
+    for (size_t i = 0; i < count; ++i)
+    {
+        red[i] = (u32)data[i * 4 + 0];
+        green[i] = (u32)data[i * 4 + 1];
+        blue[i] = (u32)data[i * 4 + 2];
+    }
+    stbi_image_free(data);
+    width = w;
+    height = h;
+    return true;
+}
+
+static void write_binary(const std::filesystem::path &out_path,
+                         int width, int height, const std::vector<u64> &values)
+{
+    FILE *f = std::fopen(out_path.string().c_str(), "wb");
+    if (!f)
+    {
+        std::perror("fopen");
+        return;
+    }
+    std::fwrite(values.data(), sizeof(u64), values.size(), f);
+    std::fclose(f);
+}
+
+int main(int argc, char **argv)
+{
+    const int EXPECTED_W = 8192;
+    const int EXPECTED_H = 8192;
+
+    std::string provincePath, countryPath, locationPath;
+    std::string output_path;
+    std::string folder;
+
+    if (argc == 1)
+    {
+        folder = "GameFiles/Map/ConstantProvinces";
+        provincePath = folder + "/ProvinceMap.png";
+        countryPath = folder + "/CountryMap.png";
+        locationPath = folder + "/LocationMap.png";
+        output_path = "GameData/Map/ConstantProvincesMap.bin";
+    }
+    else if (argc == 5)
+    {
+        provincePath = argv[1];
+        countryPath = argv[2];
+        locationPath = argv[3];
+        output_path = argv[4];
+    }
+    else
+    {
+        std::fprintf(stderr, "Usage: %s [province.png country.png location.png output.bin]\n", argv[0]);
+        std::printf("\nPress Enter to exit...\n");
+        std::getchar();
+        return 1;
+    }
+
+    // ---- Load Province (16‑bit RG) ----
+    std::vector<u16> province;
+    int width = 0, height = 0;
+    if (!load_rg_to_u16(provincePath, province, width, height))
+    {
+        std::fprintf(stderr, "Failed to load %s\n", provincePath.c_str());
+        std::printf("\nPress Enter to exit...\n");
+        std::getchar();
+        return 2;
+    }
+    if (width != EXPECTED_W || height != EXPECTED_H)
+    {
+        std::fprintf(stderr, "Size mismatch: %s is %dx%d, expected %dx%d\n",
+                     provincePath.c_str(), width, height, EXPECTED_W, EXPECTED_H);
+        std::printf("\nPress Enter to exit...\n");
+        std::getchar();
+        return 3;
+    }
+
+    // ---- Load Country (Red channel) ----
+    std::vector<u8> country;
+    int w2 = 0, h2 = 0;
+    if (!load_red_channel(countryPath, country, w2, h2))
+    {
+        std::fprintf(stderr, "Failed to load %s\n", countryPath.c_str());
+        std::printf("\nPress Enter to exit...\n");
+        std::getchar();
+        return 2;
+    }
+    if (w2 != EXPECTED_W || h2 != EXPECTED_H)
+    {
+        std::fprintf(stderr, "Size mismatch: %s is %dx%d, expected %dx%d\n",
+                     countryPath.c_str(), w2, h2, EXPECTED_W, EXPECTED_H);
+        std::printf("\nPress Enter to exit...\n");
+        std::getchar();
+        return 3;
+    }
+
+    // ---- Load LocationMap (Red, Green, Blue) ----
+    std::vector<u32> locRed, locGreen, locBlue;
+    int w3 = 0, h3 = 0;
+    if (!load_rgb_channels(locationPath, locRed, locGreen, locBlue, w3, h3))
+    {
+        std::fprintf(stderr, "Failed to load %s\n", locationPath.c_str());
+        std::printf("\nPress Enter to exit...\n");
+        std::getchar();
+        return 2;
+    }
+    if (w3 != EXPECTED_W || h3 != EXPECTED_H)
+    {
+        std::fprintf(stderr, "Size mismatch: %s is %dx%d, expected %dx%d\n",
+                     locationPath.c_str(), w3, h3, EXPECTED_W, EXPECTED_H);
+        std::printf("\nPress Enter to exit...\n");
+        std::getchar();
+        return 3;
+    }
+
+    // ---- Pack everything ----
+    size_t pixelCount = (size_t)width * height;
+    std::vector<u64> packed(pixelCount);
+
+    for (size_t i = 0; i < pixelCount; ++i)
+    {
+        u64 prov = province[i]; // 16 bits
+        u64 cnt = country[i];   // 8 bits
+
+        // LocationType from Red (0‑255) scaled to 0‑15
+        u64 locType = (locRed[i] * 15u + 127u) / 255u;
+
+        // LocationLevel from Green+Blue combined (16‑bit), then scaled down to 10 bits
+        u32 greenBlue = ((u32)locGreen[i] << 8) | (u32)locBlue[i]; // 0‑65535
+        u64 locLev = greenBlue >> 6;                               // effectively (greenBlue * 1023) / 65535, fast and lossless
+
+        u64 val = 0;
+        val |= (prov & 0xFFFFu) << 48; // bits 63‑48
+        val |= (cnt & 0xFFu) << 40;    // bits 47‑40
+        // X (bits 39‑27) = 0
+        // Y (bits 26‑14) = 0
+        val |= (locType & 0xFu) << 10; // bits 13‑10
+        val |= (locLev & 0x3FFu) << 0; // bits 9‑0
+
+        packed[i] = val;
+    }
+
+    write_binary(output_path, width, height, packed);
+    std::printf("Wrote %zu pixels to %s\n", pixelCount, output_path.c_str());
+    std::printf("\nPress Enter to exit...\n");
+    std::getchar();
+    return 0;
+}
+
+================================================================================
+ FILE: ConstantValuesMapCreator.cpp
+================================================================================
+/**
+ * ConstantValuesMapCreator – Binary 16‑bit per‑pixel value scores
+ * ---------------------------------------------------------------
+ * Reads eight 8192×8192 PNGs (red channel only) and packs each pixel’s
+ * Comfort, Development, Prosperity, Safety, Health, Knowledge, Capacity,
+ * and Score (each 2 bits) into a single 16‑bit integer. The result is
+ * written as a raw binary file, one uint16_t per pixel, row‑major order.
+ *
+ * Auto‑mode (double‑click) expects the PNGs in:
+ *   GameFiles/Map/ConstantValues/
+ *
+ * Manual mode:
+ *   ConstantValuesMapCreator.exe comfort.png development.png prosperity.png
+ *     safety.png health.png knowledge.png capacity.png score.png output.bin
+ */
+
+#include <cstdint>
+#include <cstdio>
+#include <string>
+#include <vector>
+#include <iostream>
+#include <filesystem>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
+using u32 = uint32_t;
+using u16 = uint16_t;
+
+static bool load_red_channel(const std::string &path,
+                             std::vector<u32> &out,
+                             int &width, int &height)
+{
+    int w = 0, h = 0, c = 0;
+    unsigned char *data = stbi_load(path.c_str(), &w, &h, &c, 4);
+    if (!data)
+        return false;
+    out.resize((size_t)w * (size_t)h);
+    for (size_t i = 0; i < (size_t)w * (size_t)h; ++i)
+        out[i] = (u32)data[i * 4];
+    stbi_image_free(data);
+    width = w;
+    height = h;
+    return true;
+}
+
+static void write_binary(const std::filesystem::path &out,
+                         int width, int height,
+                         const std::vector<u16> &values)
+{
+    FILE *f = std::fopen(out.string().c_str(), "wb");
+    if (!f)
+    {
+        std::perror("fopen");
+        return;
+    }
+    std::fwrite(values.data(), sizeof(u16), values.size(), f);
+    std::fclose(f);
+}
+
+int main(int argc, char **argv)
+{
+    const int EXPECTED_W = 8192;
+    const int EXPECTED_H = 8192;
+
+    // File names in the order of the bit layout
+    std::string names[8] = {
+        "ComfortMap.png",
+        "DevelopmentMap.png",
+        "ProsperityMap.png",
+        "SafetyMap.png",
+        "HealthMap.png",
+        "KnowledgeMap.png",
+        "CapacityMap.png",
+        "ScoreMap.png"};
+
+    int max_vals[8] = {
+        3, // Comfort      (2 bit)
+        3, // Development  (2 bit)
+        3, // Prosperity   (2 bit)
+        3, // Safety       (2 bit)
+        3, // Health       (2 bit)
+        3, // Knowledge    (2 bit)
+        3, // Capacity     (2 bit)
+        3  // Score        (2 bit)
+    };
+
+    std::string folder;
+    std::string output_path;
+
+    if (argc == 1)
+    {
+        folder = "GameFiles/Map/ConstantValues";
+        output_path = "GameData/Map/ConstantValuesMap.bin";
+    }
+    else if (argc == 10)
+    { // 8 PNGs + output
+        folder = "";
+        for (int i = 0; i < 8; ++i)
+            names[i] = argv[1 + i];
+        output_path = argv[9];
+    }
+    else
+    {
+        std::fprintf(stderr,
+                     "Usage: %s comfort.png development.png prosperity.png "
+                     "safety.png health.png knowledge.png capacity.png score.png output.bin\n",
+                     argv[0]);
+        std::printf("\nPress Enter to exit...\n");
+        std::getchar();
+        return 1;
+    }
+
+    std::vector<u32> maps[8];
+    int width = 0, height = 0;
+
+    for (int i = 0; i < 8; ++i)
+    {
+        std::string fullPath = folder.empty() ? names[i] : folder + "/" + names[i];
+        int w = 0, h = 0;
+        if (!load_red_channel(fullPath, maps[i], w, h))
+        {
+            std::fprintf(stderr, "Failed to load %s\n", fullPath.c_str());
+            std::printf("\nPress Enter to exit...\n");
+            std::getchar();
+            return 2;
+        }
+        if (w != EXPECTED_W || h != EXPECTED_H)
+        {
+            std::fprintf(stderr,
+                         "Size mismatch: %s is %dx%d, expected %dx%d\n",
+                         fullPath.c_str(), w, h, EXPECTED_W, EXPECTED_H);
+            std::printf("\nPress Enter to exit...\n");
+            std::getchar();
+            return 3;
+        }
+        if (i == 0)
+        {
+            width = w;
+            height = h;
+        }
+    }
+
+    size_t pixelCount = (size_t)width * height;
+    std::vector<u16> out(pixelCount);
+
+    for (size_t i = 0; i < pixelCount; ++i)
+    {
+        auto scale = [&](u32 red, int max_val) -> u16
+        {
+            return (u16)((red * (unsigned)max_val + 127u) / 255u);
+        };
+
+        u16 val = 0;
+        // Shift layout (MSB to LSB):
+        //   bits 15‑14 : Comfort       (2 bits)  shift 14
+        //   bits 13‑12 : Development   (2 bits)  shift 12
+        //   bits 11‑10 : Prosperity    (2 bits)  shift 10
+        //   bits  9‑ 8 : Safety        (2 bits)  shift  8
+        //   bits  7‑ 6 : Health        (2 bits)  shift  6
+        //   bits  5‑ 4 : Knowledge     (2 bits)  shift  4
+        //   bits  3‑ 2 : Capacity      (2 bits)  shift  2
+        //   bits  1‑ 0 : Score         (2 bits)  shift  0
+        val |= scale(maps[0][i], max_vals[0]) << 14;
+        val |= scale(maps[1][i], max_vals[1]) << 12;
+        val |= scale(maps[2][i], max_vals[2]) << 10;
+        val |= scale(maps[3][i], max_vals[3]) << 8;
+        val |= scale(maps[4][i], max_vals[4]) << 6;
+        val |= scale(maps[5][i], max_vals[5]) << 4;
+        val |= scale(maps[6][i], max_vals[6]) << 2;
+        val |= scale(maps[7][i], max_vals[7]) << 0;
+
+        out[i] = val;
+    }
+
+    write_binary(output_path, width, height, out);
+    std::printf("Wrote %zu pixels to %s\n", pixelCount, output_path.c_str());
+
+    std::printf("\nPress Enter to exit...\n");
+    std::getchar();
+    return 0;
+}
+
+================================================================================
+ FILE: CurrentTickCounterClock.cpp
+================================================================================
+// CurrentTickCounterClock.cpp
+// Compile: g++ -std=c++20 -static -o CurrentTickCounterClock.exe CurrentTickCounterClock.cpp
+
+#include <iostream>
+#include <fstream>
+#include <chrono>
+#include <thread>
+#include <atomic>
+#include <cstdint>
+#include <filesystem>
+#include <string>
+#include <windows.h>
+
+// --- Convert tick (10 minutes each) to time components ---
+void ticksToTime(uint32_t tick, uint8_t &hour, uint8_t &day, uint8_t &month, uint16_t &year)
+{
+    uint64_t totalMinutes = static_cast<uint64_t>(tick) * 10;
+    const uint64_t minutesPerHour = 60;
+    const uint64_t hoursPerDay = 24;
+    const uint64_t daysPerMonth = 30;
+    const uint64_t monthsPerYear = 12;
+
+    uint64_t totalHours = totalMinutes / minutesPerHour;
+    hour = totalHours % hoursPerDay;
+    uint64_t totalDays = totalHours / hoursPerDay;
+    day = totalDays % daysPerMonth;
+    uint64_t totalMonths = totalDays / daysPerMonth;
+    month = totalMonths % monthsPerYear;
+    year = totalMonths / monthsPerYear;
+}
+
+// --- Map break value (0-15) to microseconds; 15 = pause ---
+uint64_t mapBreakToDelayUs(uint8_t breakVal)
+{
+    switch (breakVal)
+    {
+    case 0:
+        return 0;
+    case 1:
+        return 1; // 1 µs
+    case 2:
+        return 5; // 5 µs
+    case 3:
+        return 10; // 10 µs
+    case 4:
+        return 50; // 50 µs
+    case 5:
+        return 100; // 100 µs
+    case 6:
+        return 500; // 500 µs
+    case 7:
+        return 1000; // 1 ms
+    case 8:
+        return 10000; // 10 ms
+    case 9:
+        return 100000; // 100 ms
+    case 10:
+        return 500000; // 500 ms
+    case 11:
+        return 1000000; // 1 s
+    case 12:
+        return 10000000; // 10 s
+    case 13:
+        return 60000000; // 1 min
+    case 14:
+        return 600000000; // 10 min
+    default:
+        return 0; // breakVal == 15 (pause)
+    }
+}
+
+// --- Interruptible delay: checks break file each step ---
+void interruptibleDelay(uint64_t totalUs, const std::filesystem::path &delayFile, uint8_t originalBreak, std::atomic<bool> &running)
+{
+    if (totalUs == 0)
+        return;
+    const uint64_t stepUs = 10000; // 10 ms steps
+    while (totalUs > 0 && running)
+    {
+        // Check if break value has changed (by reading file)
+        uint8_t currentBreak = 15;
+        std::ifstream f(delayFile, std::ios::binary);
+        if (f.is_open())
+        {
+            f.read(reinterpret_cast<char *>(&currentBreak), sizeof(currentBreak));
+        }
+        if (currentBreak != originalBreak)
+            return;
+        uint64_t sleepUs = (totalUs > stepUs) ? stepUs : totalUs;
+        if (sleepUs < 1000)
+        {
+            auto start = std::chrono::high_resolution_clock::now();
+            auto end = start + std::chrono::microseconds(sleepUs);
+            while (std::chrono::high_resolution_clock::now() < end)
+            {
+            }
+        }
+        else
+        {
+            std::this_thread::sleep_for(std::chrono::microseconds(sleepUs));
+        }
+        totalUs -= sleepUs;
+    }
+}
+
+// --- Console positioning ---
+void gotoxy(int x, int y)
+{
+    COORD coord = {static_cast<SHORT>(x), static_cast<SHORT>(y)};
+    SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), coord);
+}
+
+int main()
+{
+    // Paths
+    std::filesystem::path clockFile = "GameData/Line/CurrentTickCounterClock.bin";
+    std::filesystem::path delayFile = "GameData/Line/CurrentTickCounterClockDelay.bin";
+    std::filesystem::create_directories(clockFile.parent_path());
+
+    // Default break = 15 (pause) if delay file missing
+    uint8_t breakVal = 15;
+
+    std::cout << "CurrentTickCounterClock started. Each tick = 10 minutes.\n";
+    std::cout << "Reads delay from: " << delayFile << "\n";
+    std::cout << "Writes tick to:   " << clockFile << "\n";
+    std::cout << "Use CurrentTickCounterClockDelay.exe to change speed.\n";
+    std::cout << "Type 0-15 in that program to adjust simulation speed.\n\n";
+
+    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    GetConsoleScreenBufferInfo(hConsole, &csbi);
+    int statusRow = csbi.dwCursorPosition.Y;
+    int inputRow = statusRow + 1; // not used for input now, but for layout
+
+    std::atomic<bool> running = true;
+    uint32_t tick = 0;
+    bool wasPaused = false;
+
+    while (running)
+    {
+        // --- Read current break from delay file ---
+        std::ifstream f(delayFile, std::ios::binary);
+        if (f.is_open())
+        {
+            f.read(reinterpret_cast<char *>(&breakVal), sizeof(breakVal));
+        }
+        else
+        {
+            // If file missing, default to pause
+            breakVal = 15;
+        }
+
+        // --- Pause handling (break == 15) ---
+        if (breakVal == 15)
+        {
+            if (!wasPaused)
+            {
+                gotoxy(0, statusRow);
+                std::cout << "[PAUSED] Use delay controller to set 0-14.               ";
+                wasPaused = true;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            continue; // do not advance tick
+        }
+        if (wasPaused)
+        {
+            gotoxy(0, statusRow);
+            std::cout << std::string(60, ' ');
+            wasPaused = false;
+        }
+
+        uint64_t delayUs = mapBreakToDelayUs(breakVal);
+
+        // --- Compute time from tick ---
+        uint8_t hour, day, month;
+        uint16_t year;
+        ticksToTime(tick, hour, day, month, year);
+
+        int displayedYear = static_cast<int>(year) - 4500;
+        int displayedMonth = month + 1;
+        int displayedDay = day + 1;
+        int minute = (tick * 10) % 60;
+
+        // --- Write current tick to clock file (4 bytes little-endian) ---
+        std::ofstream cf(clockFile, std::ios::binary);
+        if (cf.is_open())
+        {
+            cf.write(reinterpret_cast<const char *>(&tick), sizeof(tick));
+        }
+
+        // --- Format delay string for display ---
+        std::string delayStr;
+        if (delayUs >= 1000000)
+        {
+            if (delayUs >= 60000000)
+                delayStr = std::to_string(delayUs / 60000000) + " min";
+            else
+                delayStr = std::to_string(delayUs / 1000000) + " s";
+        }
+        else if (delayUs >= 1000)
+        {
+            delayStr = std::to_string(delayUs / 1000) + " ms";
+        }
+        else if (delayUs > 0)
+        {
+            delayStr = std::to_string(delayUs) + " µs";
+        }
+        else
+        {
+            delayStr = "0";
+        }
+
+        gotoxy(0, statusRow);
+        std::cout << "Tick: " << tick
+                  << "  Date: " << displayedYear << "-" << displayedMonth << "-" << displayedDay
+                  << "  Time: " << (int)hour << ":" << minute
+                  << "  (break=" << (int)breakVal << " -> " << delayStr << ")" << std::flush;
+
+        // --- Delay with interruptibility (checks break file every 10ms) ---
+        if (delayUs > 0)
+        {
+            interruptibleDelay(delayUs, delayFile, breakVal, running);
+        }
+
+        tick++; // 32-bit wrap is automatic
+    }
+
+    return 0;
+}
+
+================================================================================
+ FILE: CurrentTickCounterClockDelay.cpp
+================================================================================
+// CurrentTickCounterClockDelay.cpp
+// Compile: g++ -std=c++20 -static -o CurrentTickCounterClockDelay.exe CurrentTickCounterClockDelay.cpp
+
+#include <iostream>
+#include <fstream>
+#include <chrono>
+#include <thread>
+#include <cstdint>
+#include <filesystem>
+
+int main()
+{
+    std::cout << "CurrentTickCounterClockDelay (Speed Controller)\n";
+    std::cout << "Enter a number (0-15) and press Enter to change simulation speed.\n";
+    std::cout << "Mapping: 0=no delay, 1=1µs,2=5µs,3=10µs,4=50µs,5=100µs,6=500µs,\n";
+    std::cout << "7=1ms,8=10ms,9=100ms,10=500ms,11=1s,12=10s,13=1min,14=10min,15=pause.\n";
+    std::cout << "Type 'q' to quit.\n\n";
+
+    // Ensure directory exists
+    std::filesystem::path delayFile = "GameData/Line/CurrentTickCounterClockDelay.bin";
+    std::filesystem::create_directories(delayFile.parent_path());
+
+    // Optional: read current clock tick for display
+    std::filesystem::path clockFile = "GameData/Line/CurrentTickCounterClock.bin";
+    auto lastClockTime = std::chrono::steady_clock::now();
+
+    std::string line;
+    while (true)
+    {
+        std::cout << "Break (0-15) > ";
+        std::getline(std::cin, line);
+        if (line == "q" || line == "Q")
+            break;
+
+        int val;
+        try
+        {
+            val = std::stoi(line);
+        }
+        catch (...)
+        {
+            std::cout << "Invalid number.\n";
+            continue;
+        }
+        if (val < 0 || val > 15)
+        {
+            std::cout << "Value must be 0-15.\n";
+            continue;
+        }
+
+        // Write break value to delay file (1 byte)
+        uint8_t breakVal = static_cast<uint8_t>(val);
+        std::ofstream f(delayFile, std::ios::binary);
+        if (f.is_open())
+        {
+            f.write(reinterpret_cast<const char *>(&breakVal), sizeof(breakVal));
+            std::cout << "Speed changed to " << val << "\n";
+        }
+        else
+        {
+            std::cout << "Warning: could not write delay file.\n";
+        }
+
+        // Optional: read and display current tick from clock file (if it exists)
+        if (std::filesystem::exists(clockFile))
+        {
+            // To avoid spamming, read at most once per second
+            auto now = std::chrono::steady_clock::now();
+            if (now - lastClockTime > std::chrono::seconds(1))
+            {
+                lastClockTime = now;
+                std::ifstream cf(clockFile, std::ios::binary);
+                if (cf)
+                {
+                    uint32_t tick;
+                    cf.read(reinterpret_cast<char *>(&tick), sizeof(tick));
+                    if (cf.gcount() == sizeof(tick))
+                    {
+                        // Convert tick to date/time (10 minutes per tick)
+                        uint64_t totalMinutes = static_cast<uint64_t>(tick) * 10;
+                        uint64_t totalHours = totalMinutes / 60;
+                        uint8_t hour = totalHours % 24;
+                        uint64_t totalDays = totalHours / 24;
+                        uint8_t day = totalDays % 30;
+                        uint64_t totalMonths = totalDays / 30;
+                        uint8_t month = totalMonths % 12;
+                        uint16_t year = totalMonths / 12;
+                        int displayedYear = static_cast<int>(year) - 4500;
+                        int minute = (tick * 10) % 60;
+                        std::cout << " (Clock shows: " << displayedYear << "-" << (month + 1) << "-" << (day + 1)
+                                  << " " << (int)hour << ":" << minute << ")\n";
+                    }
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+================================================================================
+ FILE: CyclicalDailyClimateMapCreator.cpp
+================================================================================
+/**
+ * CyclicalDailyClimateMapCreator – Binary 16‑bit per‑pixel daily climate data
+ * ---------------------------------------------------------------------------
+ * Reads two 8192×8192 PNGs (red channel only) from the input folder and packs
+ * each pixel’s DayOfTheYear (0 initially, range 0‑359), DailyLocalSeason,
+ * and DailyWeather into a single 16‑bit integer. The result is written as a
+ * raw binary file.
+ *
+ * DayOfTheYear is never read from a PNG – it is fixed to 0.
+ * In the game engine it ranges 0‑359, wrapping to 0 after 360.
+ *
+ * Auto‑mode expects the PNGs in:
+ *   GameFiles/Map/CyclicalClimate/
+ *
+ * Manual mode:
+ *   CyclicalDailyClimateMapCreator.exe dailyseason.png dailyweather.png output.bin
+ */
+
+#include <cstdint>
+#include <cstdio>
+#include <string>
+#include <vector>
+#include <iostream>
+#include <filesystem>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
+using u32 = uint32_t;
+using u16 = uint16_t;
+
+static bool load_red_channel(const std::string &path,
+                             std::vector<u32> &out,
+                             int &width, int &height)
+{
+    int w = 0, h = 0, c = 0;
+    unsigned char *data = stbi_load(path.c_str(), &w, &h, &c, 4);
+    if (!data)
+        return false;
+    out.resize((size_t)w * (size_t)h);
+    for (size_t i = 0; i < (size_t)w * (size_t)h; ++i)
+        out[i] = (u32)data[i * 4];
+    stbi_image_free(data);
+    width = w;
+    height = h;
+    return true;
+}
+
+static void write_binary(const std::filesystem::path &out,
+                         int width, int height,
+                         const std::vector<u16> &values)
+{
+    FILE *f = std::fopen(out.string().c_str(), "wb");
+    if (!f)
+    {
+        std::perror("fopen");
+        return;
+    }
+    std::fwrite(values.data(), sizeof(u16), values.size(), f);
+    std::fclose(f);
+}
+
+int main(int argc, char **argv)
+{
+    const int EXPECTED_W = 8192;
+    const int EXPECTED_H = 8192;
+
+    std::string names[2] = {
+        "DailyLocalSeasonMap.png",
+        "DailyWeatherMap.png"};
+
+    int max_vals[2] = {
+        7, // DailyLocalSeason (3 bit)
+        15 // DailyWeather     (4 bit)
+    };
+
+    std::string folder;
+    std::string output_path;
+
+    if (argc == 1)
+    {
+        folder = "GameFiles/Map/CyclicalClimate";
+        output_path = "GameData/Map/CyclicalDailyClimate.bin";
+    }
+    else if (argc == 4)
+    {
+        folder = "";
+        for (int i = 0; i < 2; ++i)
+            names[i] = argv[1 + i];
+        output_path = argv[3];
+    }
+    else
+    {
+        std::fprintf(stderr,
+                     "Usage: %s [dailyseason.png dailyweather.png output.bin]\n",
+                     argv[0]);
+        std::printf("\nPress Enter to exit...\n");
+        std::getchar();
+        return 1;
+    }
+
+    std::vector<u32> maps[2];
+    int width = 0, height = 0;
+
+    for (int i = 0; i < 2; ++i)
+    {
+        std::string fullPath = folder.empty() ? names[i] : folder + "/" + names[i];
+        int w = 0, h = 0;
+        if (!load_red_channel(fullPath, maps[i], w, h))
+        {
+            std::fprintf(stderr, "Failed to load %s\n", fullPath.c_str());
+            std::printf("\nPress Enter to exit...\n");
+            std::getchar();
+            return 2;
+        }
+        if (w != EXPECTED_W || h != EXPECTED_H)
+        {
+            std::fprintf(stderr,
+                         "Size mismatch: %s is %dx%d, expected %dx%d\n",
+                         fullPath.c_str(), w, h, EXPECTED_W, EXPECTED_H);
+            std::printf("\nPress Enter to exit...\n");
+            std::getchar();
+            return 3;
+        }
+        if (i == 0)
+        {
+            width = w;
+            height = h;
+        }
+    }
+
+    size_t pixelCount = (size_t)width * height;
+    std::vector<u16> out(pixelCount);
+
+    for (size_t i = 0; i < pixelCount; ++i)
+    {
+        auto scale = [&](u32 red, int max_val) -> u16
+        {
+            return (u16)((red * (unsigned)max_val + 127u) / 255u);
+        };
+
+        u16 val = 0;
+        val |= scale(maps[0][i], max_vals[0]) << 4; // DailyLocalSeason
+        val |= scale(maps[1][i], max_vals[1]) << 0; // DailyWeather
+
+        out[i] = val;
+    }
+
+    write_binary(output_path, width, height, out);
+    std::printf("Wrote %zu pixels to %s\n", pixelCount, output_path.c_str());
+
+    std::printf("\nPress Enter to exit...\n");
+    std::getchar();
+    return 0;
+}
+
+================================================================================
+ FILE: CyclicalHourlyClimateMapCreator.cpp
+================================================================================
+/**
+ * CyclicalHourlyClimateMapCreator – Binary 32‑bit per‑pixel climate data
+ * -----------------------------------------------------------------------
+ * Reads five 8192×8192 PNGs (red channel only) from the input folder
+ * and packs each pixel's HourOfTheYear (0 initially, range 0‑8639),
+ * HourlyTemperature, HourlyHumidity, HourlyWind, HourlyWindDir, and
+ * HourlyPressure into a single 32‑bit integer. The result is written
+ * as a raw binary file.
+ *
+ * HourOfTheYear is never read from a PNG – it is fixed to 0.
+ * In the game engine it can range 0‑8639, wrapping to 0 after 8640.
+ *
+ * Auto‑mode expects the PNGs in:
+ *   GameFiles/Map/CyclicalClimate/
+ *
+ * Manual mode:
+ *   CyclicalHourlyClimateMapCreator.exe temperature.png humidity.png
+ *     wind.png winddir.png pressure.png output.bin
+ */
+
+#include <cstdint>
+#include <cstdio>
+#include <string>
+#include <vector>
+#include <iostream>
+#include <filesystem>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
+using u32 = uint32_t;
+
+static bool load_red_channel(const std::string &path,
+                             std::vector<u32> &out,
+                             int &width, int &height)
+{
+    int w = 0, h = 0, c = 0;
+    unsigned char *data = stbi_load(path.c_str(), &w, &h, &c, 4);
+    if (!data)
+        return false;
+    out.resize((size_t)w * (size_t)h);
+    for (size_t i = 0; i < (size_t)w * (size_t)h; ++i)
+        out[i] = (u32)data[i * 4];
+    stbi_image_free(data);
+    width = w;
+    height = h;
+    return true;
+}
+
+static void write_binary(const std::filesystem::path &out,
+                         int width, int height,
+                         const std::vector<u32> &values)
+{
+    FILE *f = std::fopen(out.string().c_str(), "wb");
+    if (!f)
+    {
+        std::perror("fopen");
+        return;
+    }
+    std::fwrite(values.data(), sizeof(u32), values.size(), f);
+    std::fclose(f);
+}
+
+int main(int argc, char **argv)
+{
+    const int EXPECTED_W = 8192;
+    const int EXPECTED_H = 8192;
+
+    std::string names[5] = {
+        "HourlyTemperatureMap.png",
+        "HourlyHumidityMap.png",
+        "HourlyWindMap.png",
+        "HourlyWindDirMap.png",
+        "HourlyPressureMap.png"};
+
+    int max_vals[5] = {
+        255, // Temperature (8 bit)
+        3,   // Humidity    (2 bit)
+        7,   // Wind        (3 bit)
+        7,   // WindDir     (3 bit)
+        3    // Pressure    (2 bit)
+    };
+
+    std::string folder;
+    std::string output_path;
+
+    if (argc == 1)
+    {
+        folder = "GameFiles/Map/CyclicalClimate";
+        output_path = "GameData/Map/CyclicalHourlyClimate.bin";
+    }
+    else if (argc == 7)
+    {
+        folder = "";
+        for (int i = 0; i < 5; ++i)
+            names[i] = argv[1 + i];
+        output_path = argv[6];
+    }
+    else
+    {
+        std::fprintf(stderr,
+                     "Usage: %s [temperature.png humidity.png wind.png winddir.png pressure.png output.bin]\n",
+                     argv[0]);
+        std::printf("\nPress Enter to exit...\n");
+        std::getchar();
+        return 1;
+    }
+
+    std::vector<u32> maps[5];
+    int width = 0, height = 0;
+
+    for (int i = 0; i < 5; ++i)
+    {
+        std::string fullPath = folder.empty() ? names[i] : folder + "/" + names[i];
+        int w = 0, h = 0;
+        if (!load_red_channel(fullPath, maps[i], w, h))
+        {
+            std::fprintf(stderr, "Failed to load %s\n", fullPath.c_str());
+            std::printf("\nPress Enter to exit...\n");
+            std::getchar();
+            return 2;
+        }
+        if (w != EXPECTED_W || h != EXPECTED_H)
+        {
+            std::fprintf(stderr,
+                         "Size mismatch: %s is %dx%d, expected %dx%d\n",
+                         fullPath.c_str(), w, h, EXPECTED_W, EXPECTED_H);
+            std::printf("\nPress Enter to exit...\n");
+            std::getchar();
+            return 3;
+        }
+        if (i == 0)
+        {
+            width = w;
+            height = h;
+        }
+    }
+
+    size_t pixelCount = (size_t)width * height;
+    std::vector<u32> out(pixelCount);
+
+    for (size_t i = 0; i < pixelCount; ++i)
+    {
+        auto scale = [&](u32 red, int max_val) -> u32
+        {
+            return (u32)((red * (unsigned)max_val + 127u) / 255u);
+        };
+
+        u32 val = 0;
+        val |= scale(maps[0][i], max_vals[0]) << 10; // Temperature
+        val |= scale(maps[1][i], max_vals[1]) << 8;  // Humidity
+        val |= scale(maps[2][i], max_vals[2]) << 5;  // Wind
+        val |= scale(maps[3][i], max_vals[3]) << 2;  // WindDir
+        val |= scale(maps[4][i], max_vals[4]) << 0;  // Pressure
+
+        out[i] = val;
+    }
+
+    write_binary(output_path, width, height, out);
+    std::printf("Wrote %zu pixels to %s\n", pixelCount, output_path.c_str());
+
+    std::printf("\nPress Enter to exit...\n");
+    std::getchar();
+    return 0;
+}
+
+================================================================================
+ FILE: CyclicalMonthlyLocalsMapCreator.cpp
+================================================================================
+/**
+ * CyclicalMonthlyLocalsMapCreator – Binary 32‑bit per‑pixel native data
+ * -----------------------------------------------------------------------
+ * Reads two 8192×8192 PNGs: MonthlyPopulationIdMap.png (Red+Green channels
+ * combined to 16‑bit PopulationID) and MonthlyLocalsNumMap.png (Red channel
+ * scaled to 2‑bit LocalsNum). Packs them into a single 32‑bit integer per
+ * pixel, written as a raw binary file.
+ *
+ * Auto‑mode (double‑click) expects the PNGs in:
+ *   GameFiles/Map/CyclicalLocals/
+ *
+ * Manual mode:
+ *   CyclicalMonthlyLocalsMapCreator.exe populationid.png Localsnum.png output.bin
+ */
+
+#include <cstdint>
+#include <cstdio>
+#include <string>
+#include <vector>
+#include <iostream>
+#include <filesystem>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
+using u32 = uint32_t;
+using u16 = uint16_t;
+
+// Load Red+Green channels combined into a 16‑bit value (0–65535).
+static bool load_rg_to_u16(const std::string &path,
+                           std::vector<u16> &out,
+                           int &width, int &height)
+{
+    int w = 0, h = 0, c = 0;
+    unsigned char *data = stbi_load(path.c_str(), &w, &h, &c, 4);
+    if (!data)
+        return false;
+    out.resize((size_t)w * (size_t)h);
+    for (size_t i = 0; i < (size_t)w * (size_t)h; ++i)
+    {
+        unsigned char r = data[i * 4 + 0];
+        unsigned char g = data[i * 4 + 1];
+        out[i] = (u16)(((u16)r << 8) | (u16)g);
+    }
+    stbi_image_free(data);
+    width = w;
+    height = h;
+    return true;
+}
+
+// Load Red channel only.
+static bool load_red_channel(const std::string &path,
+                             std::vector<u32> &out,
+                             int &width, int &height)
+{
+    int w = 0, h = 0, c = 0;
+    unsigned char *data = stbi_load(path.c_str(), &w, &h, &c, 4);
+    if (!data)
+        return false;
+    out.resize((size_t)w * (size_t)h);
+    for (size_t i = 0; i < (size_t)w * (size_t)h; ++i)
+        out[i] = (u32)data[i * 4];
+    stbi_image_free(data);
+    width = w;
+    height = h;
+    return true;
+}
+
+static void write_binary(const std::filesystem::path &out,
+                         int width, int height,
+                         const std::vector<u32> &values)
+{
+    FILE *f = std::fopen(out.string().c_str(), "wb");
+    if (!f)
+    {
+        std::perror("fopen");
+        return;
+    }
+    std::fwrite(values.data(), sizeof(u32), values.size(), f);
+    std::fclose(f);
+}
+
+int main(int argc, char **argv)
+{
+    const int EXPECTED_W = 8192;
+    const int EXPECTED_H = 8192;
+
+    std::string popPath;
+    std::string nativePath;
+    std::string folder;
+    std::string output_path;
+
+    if (argc == 1)
+    {
+        folder = "GameFiles/Map/CyclicalLocals";
+        popPath = folder + "/MonthlyPopulationIdMap.png";
+        nativePath = folder + "/MonthlyLocalsNumMap.png";
+        output_path = "GameData/Map/CyclicalMonthlyLocalsMap.bin"; // <-- renamed
+    }
+    else if (argc == 4)
+    {
+        popPath = argv[1];
+        nativePath = argv[2];
+        output_path = argv[3];
+    }
+    else
+    {
+        std::fprintf(stderr,
+                     "Usage: %s [populationid.png Localsnum.png output.bin]\n",
+                     argv[0]);
+        std::printf("\nPress Enter to exit...\n");
+        std::getchar();
+        return 1;
+    }
+
+    // Load PopulationID (Red+Green → 16‑bit)
+    std::vector<u16> popMap;
+    int width = 0, height = 0;
+    if (!load_rg_to_u16(popPath, popMap, width, height))
+    {
+        std::fprintf(stderr, "Failed to load %s\n", popPath.c_str());
+        std::printf("\nPress Enter to exit...\n");
+        std::getchar();
+        return 2;
+    }
+    if (width != EXPECTED_W || height != EXPECTED_H)
+    {
+        std::fprintf(stderr, "Size mismatch: %s is %dx%d, expected %dx%d\n",
+                     popPath.c_str(), width, height, EXPECTED_W, EXPECTED_H);
+        std::printf("\nPress Enter to exit...\n");
+        std::getchar();
+        return 3;
+    }
+
+    // Load LocalsNum (Red → 0–255)
+    std::vector<u32> nativeMap;
+    int w2 = 0, h2 = 0;
+    if (!load_red_channel(nativePath, nativeMap, w2, h2))
+    {
+        std::fprintf(stderr, "Failed to load %s\n", nativePath.c_str());
+        std::printf("\nPress Enter to exit...\n");
+        std::getchar();
+        return 2;
+    }
+    if (w2 != EXPECTED_W || h2 != EXPECTED_H)
+    {
+        std::fprintf(stderr, "Size mismatch: %s is %dx%d, expected %dx%d\n",
+                     nativePath.c_str(), w2, h2, EXPECTED_W, EXPECTED_H);
+        std::printf("\nPress Enter to exit...\n");
+        std::getchar();
+        return 3;
+    }
+
+    size_t pixelCount = (size_t)width * height;
+    std::vector<u32> out(pixelCount);
+
+    for (size_t i = 0; i < pixelCount; ++i)
+    {
+        u32 popID = popMap[i];                                 // 0–65535
+        u32 native = (u32)((nativeMap[i] * 3u + 127u) / 255u); // 0–3
+
+        u32 val = 0;
+        // Layout:
+        //   bits 17‑ 2 : PopulationID (16 bits)
+        //   bits  1‑ 0 : LocalsNum   (2 bits)
+        val |= (popID & 0xFFFFu) << 2;
+        val |= (native & 0x3u);
+
+        out[i] = val;
+    }
+
+    write_binary(output_path, width, height, out);
+    std::printf("Wrote %zu pixels to %s\n", pixelCount, output_path.c_str());
+
+    std::printf("\nPress Enter to exit...\n");
+    std::getchar();
+    return 0;
+}
+
+================================================================================
+ FILE: EventualVolcanicRiverMapCreator.cpp
+================================================================================
+/**
+ * EventualVolcanicRiverMapCreator – 4‑bit per‑pixel volcanic + river data
+ * ------------------------------------------------------------------------
+ * Reads RiverMap.png and VolcanicMap.png (Red channel, scaled to 0‑3 each)
+ * and packs two 4‑bit values per byte (first pixel's River+Volcanic in low
+ * nibble, second pixel's in high nibble). Written as a raw binary file.
+ *
+ * Auto‑mode expects the PNGs in:
+ *   GameFiles/Map/Eventual/
+ *
+ * Manual mode:
+ *   EventualVolcanicRiverMapCreator.exe river.png volcanic.png output.bin
+ */
+
+#include <cstdint>
+#include <cstdio>
+#include <string>
+#include <vector>
+#include <iostream>
+#include <fstream>
+#include <filesystem>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
+using u32 = uint32_t;
+using u8 = uint8_t;
+
+static bool load_red_channel(const std::string &path, std::vector<u32> &out,
+                             int &width, int &height)
+{
+    int w = 0, h = 0, c = 0;
+    unsigned char *data = stbi_load(path.c_str(), &w, &h, &c, 4);
+    if (!data)
+        return false;
+    out.resize((size_t)w * h);
+    for (size_t i = 0; i < (size_t)w * h; ++i)
+        out[i] = (u32)data[i * 4 + 0];
+    stbi_image_free(data);
+    width = w;
+    height = h;
+    return true;
+}
+
+static void write_binary(const std::filesystem::path &out_path,
+                         int width, int height, const std::vector<u8> &packed)
+{
+    FILE *f = std::fopen(out_path.string().c_str(), "wb");
+    if (!f)
+    {
+        std::perror("fopen");
+        return;
+    }
+    std::fwrite(packed.data(), sizeof(u8), packed.size(), f);
+    std::fclose(f);
+}
+
+int main(int argc, char **argv)
+{
+    const int EXPECTED_W = 8192;
+    const int EXPECTED_H = 8192;
+
+    std::string riverPath, volcanicPath;
+    std::string output_path;
+    std::string folder;
+
+    if (argc == 1)
+    {
+        folder = "GameFiles/Map/Eventual";
+        riverPath = folder + "/RiverMap.png";
+        volcanicPath = folder + "/VolcanicMap.png";
+        output_path = "GameData/Map/EventualVolcanicRiverMap.bin";
+    }
+    else if (argc == 4)
+    {
+        riverPath = argv[1];
+        volcanicPath = argv[2];
+        output_path = argv[3];
+    }
+    else
+    {
+        std::fprintf(stderr, "Usage: %s [river.png volcanic.png output.bin]\n", argv[0]);
+        std::printf("\nPress Enter to exit...\n");
+        std::getchar();
+        return 1;
+    }
+
+    // Load River
+    std::vector<u32> river;
+    int width = 0, height = 0;
+    if (!load_red_channel(riverPath, river, width, height))
+    {
+        std::fprintf(stderr, "Failed to load %s\n", riverPath.c_str());
+        std::printf("\nPress Enter to exit...\n");
+        std::getchar();
+        return 2;
+    }
+    if (width != EXPECTED_W || height != EXPECTED_H)
+    {
+        std::fprintf(stderr, "Size mismatch: %s is %dx%d, expected %dx%d\n",
+                     riverPath.c_str(), width, height, EXPECTED_W, EXPECTED_H);
+        std::printf("\nPress Enter to exit...\n");
+        std::getchar();
+        return 3;
+    }
+
+    // Load Volcanic
+    std::vector<u32> volcanic;
+    int w2 = 0, h2 = 0;
+    if (!load_red_channel(volcanicPath, volcanic, w2, h2))
+    {
+        std::fprintf(stderr, "Failed to load %s\n", volcanicPath.c_str());
+        std::printf("\nPress Enter to exit...\n");
+        std::getchar();
+        return 2;
+    }
+    if (w2 != EXPECTED_W || h2 != EXPECTED_H)
+    {
+        std::fprintf(stderr, "Size mismatch: %s is %dx%d, expected %dx%d\n",
+                     volcanicPath.c_str(), w2, h2, EXPECTED_W, EXPECTED_H);
+        std::printf("\nPress Enter to exit...\n");
+        std::getchar();
+        return 3;
+    }
+
+    size_t pixelCount = (size_t)width * height;
+    std::vector<u8> packed(pixelCount / 2); // 2 pixels per byte
+
+    for (size_t i = 0; i < pixelCount; i += 2)
+    {
+        // Pixel 1
+        u8 r1 = (u8)((river[i] * 3u + 127u) / 255u);
+        u8 v1 = (u8)((volcanic[i] * 3u + 127u) / 255u);
+        u8 nib1 = (v1 << 2) | r1; // Volcanic in bits 3‑2, River in bits 1‑0
+
+        // Pixel 2
+        u8 r2 = (u8)((river[i + 1] * 3u + 127u) / 255u);
+        u8 v2 = (u8)((volcanic[i + 1] * 3u + 127u) / 255u);
+        u8 nib2 = (v2 << 2) | r2;
+
+        packed[i / 2] = (nib2 << 4) | nib1; // first pixel in low nibble
+    }
+
+    write_binary(output_path, width, height, packed);
+    std::printf("Wrote %zu bytes to %s\n", packed.size(), output_path.c_str());
+    std::printf("\nPress Enter to exit...\n");
+    std::getchar();
+    return 0;
+}
+
+================================================================================
+ FILE: GameFiles\Graph\BuildingSum.txt
+================================================================================
