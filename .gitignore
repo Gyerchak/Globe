@@ -35,7 +35,6 @@
 *.lib
 
 # Executables
-*.exe
 *.out
 *.app
 
@@ -77,6 +76,8 @@ Output/
 .Ignore/
 Data/
 4DeepSeek/
+Executables/
+Data4Deepseek.exe
 
 #Switch ON BY # 
 .Old/
