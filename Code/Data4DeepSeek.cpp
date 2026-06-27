@@ -12,10 +12,11 @@
 #include <functional>
 #include <set>
 #include <cstdio>
+#include <cstdint>
 
 namespace fs = std::filesystem;
 
-// File extensions considered as text/code files to include in Code4Deepseek.txt
+// File extensions considered as text/code files
 const std::set<std::string> CODE_EXTENSIONS = {
     ".cpp", ".h", ".hpp", ".c", ".cs", ".py", ".java", ".js", ".ts",
     ".json", ".xml", ".yaml", ".yml", ".txt", ".md", ".csv",
@@ -28,6 +29,9 @@ const std::set<std::string> CODE_EXTENSIONS = {
     ".php", ".rb", ".go", ".rs", ".lua",
     ".tex", ".bib", ".sty",
     ".gitignore", ".gitattributes", ".editorconfig"};
+
+// Maximum file size for "Old" collections: 2 MB
+constexpr uintmax_t OLD_MAX_SIZE = 2ULL * 1024ULL * 1024ULL; // 2 MB
 
 // Returns true if the file extension is in our code/text list
 static bool isCodeFile(const fs::path &path)
@@ -55,8 +59,10 @@ static std::string humanReadableSize(uintmax_t bytes)
     return buf;
 }
 
-// Builds the directory tree with file sizes (bytes and bits) and skips folders named "Old"
-static std::string buildTree(const fs::path &root)
+// Builds the directory tree with file sizes (bytes and bits).
+// If 'skipDirs' is provided, those directory names are completely omitted.
+static std::string buildTree(const fs::path &root,
+                             const std::set<std::string> &skipDirs = {})
 {
     std::string result;
 
@@ -66,15 +72,17 @@ static std::string buildTree(const fs::path &root)
         std::vector<fs::directory_entry> entries;
         for (auto &e : fs::directory_iterator(dir))
         {
-            // Skip any directory named "Old"
-            if (e.is_directory() && e.path().filename() == "Old")
+            if (e.is_directory())
             {
-                continue;
+                std::string dirName = e.path().filename().string();
+                if (skipDirs.count(dirName))
+                    continue; // skip this entire directory
             }
             entries.push_back(e);
         }
 
-        std::sort(entries.begin(), entries.end(), [](const fs::directory_entry &a, const fs::directory_entry &b)
+        std::sort(entries.begin(), entries.end(),
+                  [](const fs::directory_entry &a, const fs::directory_entry &b)
                   {
             if (a.is_directory() != b.is_directory())
                 return a.is_directory() > b.is_directory();
@@ -120,39 +128,82 @@ static std::string buildTree(const fs::path &root)
     return result;
 }
 
-// Collects all code/text files recursively, skipping "Old" directories
-// and ignoring the two specific output files (Code4Deepseek.txt, Dir4Deepseek.txt)
-static std::vector<fs::path> collectCodeFiles(const fs::path &root)
+// Collects files recursively from 'dir'.
+// If 'codeOnly' == true, only files matching CODE_EXTENSIONS are included.
+// If 'maxSize' > 0, files with size >= maxSize are skipped.
+static std::vector<fs::path> collectFiles(const fs::path &dir,
+                                          bool codeOnly = true,
+                                          uintmax_t maxSize = 0)
 {
     std::vector<fs::path> files;
-    for (auto &entry : fs::recursive_directory_iterator(root))
+    if (!fs::exists(dir) || !fs::is_directory(dir))
+        return files;
+
+    for (auto &entry : fs::recursive_directory_iterator(dir))
     {
-        bool skip = false;
-        for (auto &comp : entry.path())
-        {
-            if (comp == "Old")
-            {
-                skip = true;
-                break;
-            }
-        }
-        if (skip)
+        if (!entry.is_regular_file())
             continue;
 
-        if (entry.is_regular_file() && isCodeFile(entry.path()))
-        {
-            // Ignore the two output files (to avoid including the output in itself)
-            std::string fname = entry.path().filename().string();
-            if (fname == "Code4Deepseek.txt" || fname == "Dir4Deepseek.txt")
-                continue;
+        // Optional code‑extension filter
+        if (codeOnly && !isCodeFile(entry.path()))
+            continue;
 
-            files.push_back(entry.path());
+        // Optional size filter
+        if (maxSize > 0)
+        {
+            uintmax_t sz = 0;
+            try
+            {
+                sz = fs::file_size(entry.path());
+            }
+            catch (...)
+            {
+                sz = 0;
+            }
+            if (sz >= maxSize)
+                continue;
         }
+
+        files.push_back(entry.path());
     }
+
     std::sort(files.begin(), files.end());
     return files;
 }
 
+// Writes a section header and all file contents to an output stream
+static void writeFilesSection(std::ofstream &out,
+                              const std::vector<fs::path> &files,
+                              const fs::path &baseDir,
+                              const std::string &sectionTitle)
+{
+    out << "============================================================================\n";
+    out << " " << sectionTitle << " (" << files.size() << " files)\n";
+    out << "============================================================================\n\n";
+
+    for (const auto &path : files)
+    {
+        fs::path relPath = fs::relative(path, baseDir);
+        out << "================================================================================\n";
+        out << " FILE: " << relPath.string() << "\n";
+        out << "================================================================================\n";
+
+        std::ifstream fin(path);
+        if (fin)
+        {
+            out << fin.rdbuf();
+            if (fin.bad())
+                out << "\n[ERROR reading file]\n";
+        }
+        else
+        {
+            out << "[CANNOT OPEN FILE]\n";
+        }
+        out << "\n\n";
+    }
+}
+
+// ----------------------------------------------------------------------
 int main(int argc, char *argv[])
 {
     fs::path rootDir = fs::current_path();
@@ -168,70 +219,167 @@ int main(int argc, char *argv[])
         }
     }
 
-    // Output directory and files
+    // Output directory (4DeepSeek) inside the scanned root
     const std::string outDirName = "4DeepSeek";
     fs::path outDir = rootDir / outDirName;
     std::error_code ec;
-    fs::create_directories(outDir, ec); // create 4DeepSeek if not exists
-
-    const std::string dirFile = (outDir / "Dir4Deepseek.txt").string();
-    const std::string codeFile = (outDir / "Code4Deepseek.txt").string();
+    fs::create_directories(outDir, ec);
 
     std::cout << "Scanning directory: " << fs::absolute(rootDir).string() << "\n";
 
-    // 1. Directory structure with sizes
-    std::ofstream outDirFile(dirFile);
-    if (!outDirFile)
+    // ------------------------------------------------------------------
+    // 1. Main directory structure (Dir4Deepseek.txt)
+    //    Skip .git and .Old entirely, note their exclusion.
+    // ------------------------------------------------------------------
     {
-        std::cerr << "Error: Cannot create " << dirFile << "\n";
-        std::cout << "Press Enter to exit...";
-        std::cin.get();
-        return 1;
-    }
-    outDirFile << "============================================================================\n";
-    outDirFile << " DIRECTORY STRUCTURE (file sizes in bytes & bits)\n";
-    outDirFile << " Root: " << fs::absolute(rootDir).string() << "\n";
-    outDirFile << "============================================================================\n\n";
-    outDirFile << buildTree(rootDir) << "\n";
-    outDirFile.close();
-    std::cout << "Created " << dirFile << "\n";
-
-    // 2. Code/text file contents
-    std::vector<fs::path> codeFiles = collectCodeFiles(rootDir);
-    std::ofstream outCodeFile(codeFile);
-    if (!outCodeFile)
-    {
-        std::cerr << "Error: Cannot create " << codeFile << "\n";
-        std::cout << "Press Enter to exit...";
-        std::cin.get();
-        return 1;
-    }
-    outCodeFile << "============================================================================\n";
-    outCodeFile << " CONTENTS OF CODE/TEXT FILES (" << codeFiles.size() << " files)\n";
-    outCodeFile << "============================================================================\n\n";
-
-    for (const auto &path : codeFiles)
-    {
-        fs::path relPath = fs::relative(path, rootDir);
-        outCodeFile << "================================================================================\n";
-        outCodeFile << " FILE: " << relPath.string() << "\n";
-        outCodeFile << "================================================================================\n";
-
-        std::ifstream fin(path);
-        if (fin)
+        fs::path dirFile = outDir / "Dir4Deepseek.txt";
+        std::ofstream out(dirFile);
+        if (!out)
         {
-            outCodeFile << fin.rdbuf();
-            if (fin.bad())
-                outCodeFile << "\n[ERROR reading file]\n";
+            std::cerr << "Error: Cannot create " << dirFile << "\n";
         }
         else
         {
-            outCodeFile << "[CANNOT OPEN FILE]\n";
+            out << "============================================================================\n";
+            out << " DIRECTORY STRUCTURE (file sizes in bytes & bits)\n";
+            out << " Root: " << fs::absolute(rootDir).string() << "\n";
+            out << "============================================================================\n";
+            out << " Note: .git and .Old directories are excluded from this listing.\n\n";
+
+            // Build tree with .git and .Old skipped
+            std::set<std::string> skipDirs = {".git", ".Old"};
+            out << buildTree(rootDir, skipDirs) << "\n";
+            out.close();
+            std::cout << "Created " << dirFile.filename().string() << "\n";
         }
-        outCodeFile << "\n\n";
     }
-    outCodeFile.close();
-    std::cout << "Created " << codeFile << " (" << codeFiles.size() << " files)\n";
+
+    // ------------------------------------------------------------------
+    // 2. OldDir4Deepseek.txt – tree of the .Old/ folder only
+    // ------------------------------------------------------------------
+    {
+        fs::path oldDir = rootDir / ".Old";
+        fs::path oldDirFile = outDir / "OldDir4Deepseek.txt";
+        std::ofstream out(oldDirFile);
+        if (!out)
+        {
+            std::cerr << "Error: Cannot create " << oldDirFile << "\n";
+        }
+        else
+        {
+            if (fs::exists(oldDir) && fs::is_directory(oldDir))
+            {
+                out << "============================================================================\n";
+                out << " OLD DIRECTORY STRUCTURE (file sizes in bytes & bits)\n";
+                out << " Root: " << fs::absolute(oldDir).string() << "\n";
+                out << "============================================================================\n\n";
+                out << buildTree(oldDir) << "\n"; // no skip inside .Old
+            }
+            else
+            {
+                out << "[.Old directory does not exist]\n";
+            }
+            out.close();
+            std::cout << "Created " << oldDirFile.filename().string() << "\n";
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 3. Code4Deepseek.txt – ALL code/text files from the Code/ folder
+    // ------------------------------------------------------------------
+    {
+        fs::path codeDir = rootDir / "Code";
+        fs::path codeFile = outDir / "Code4Deepseek.txt";
+        std::ofstream out(codeFile);
+        if (!out)
+        {
+            std::cerr << "Error: Cannot create " << codeFile << "\n";
+        }
+        else
+        {
+            auto files = collectFiles(codeDir, true, 0); // code only, no size limit
+            writeFilesSection(out, files, codeDir, "CONTENTS OF CODE/TEXT FILES FROM Code/");
+            out.close();
+            std::cout << "Created " << codeFile.filename().string() << " (" << files.size() << " files)\n";
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 4. GameCode4Deepseek.txt – code/text files from GameCode/
+    // ------------------------------------------------------------------
+    {
+        fs::path gameCodeDir = rootDir / "GameCode";
+        fs::path outFile = outDir / "GameCode4Deepseek.txt";
+        std::ofstream out(outFile);
+        if (!out)
+        {
+            std::cerr << "Error: Cannot create " << outFile << "\n";
+        }
+        else
+        {
+            auto files = collectFiles(gameCodeDir, true, 0);
+            writeFilesSection(out, files, gameCodeDir, "CONTENTS OF CODE/TEXT FILES FROM GameCode/");
+            out.close();
+            std::cout << "Created " << outFile.filename().string() << " (" << files.size() << " files)\n";
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 5. SourceCode4Deepseek.txt – code/text files from SourceCode/
+    // ------------------------------------------------------------------
+    {
+        fs::path sourceCodeDir = rootDir / "SourceCode";
+        fs::path outFile = outDir / "SourceCode4Deepseek.txt";
+        std::ofstream out(outFile);
+        if (!out)
+        {
+            std::cerr << "Error: Cannot create " << outFile << "\n";
+        }
+        else
+        {
+            auto files = collectFiles(sourceCodeDir, true, 0);
+            writeFilesSection(out, files, sourceCodeDir, "CONTENTS OF CODE/TEXT FILES FROM SourceCode/");
+            out.close();
+            std::cout << "Created " << outFile.filename().string() << " (" << files.size() << " files)\n";
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 6. OldCodeX.txt – for each immediate subfolder of .Old/
+    //    Include ALL files under 2 MB (no extension filter).
+    // ------------------------------------------------------------------
+    {
+        fs::path oldDir = rootDir / ".Old";
+        if (fs::exists(oldDir) && fs::is_directory(oldDir))
+        {
+            for (const auto &entry : fs::directory_iterator(oldDir))
+            {
+                if (!entry.is_directory())
+                    continue;
+
+                std::string subName = entry.path().filename().string();
+                fs::path oldOutFile = outDir / ("OldCode" + subName + ".txt");
+
+                std::ofstream out(oldOutFile);
+                if (!out)
+                {
+                    std::cerr << "Error: Cannot create " << oldOutFile << "\n";
+                    continue;
+                }
+
+                // Collect all files under 2 MB, no code‑only filter
+                auto files = collectFiles(entry.path(), false, OLD_MAX_SIZE);
+                std::string title = "CONTENTS OF FILES FROM .Old/" + subName + "/ (size < 2 MB)";
+                writeFilesSection(out, files, entry.path(), title);
+                out.close();
+                std::cout << "Created " << oldOutFile.filename().string() << " (" << files.size() << " files)\n";
+            }
+        }
+        else
+        {
+            std::cout << "Note: .Old directory not found, skipping OldCode generation.\n";
+        }
+    }
 
     std::cout << "\nDone. Press Enter to exit...";
     std::cin.get();
