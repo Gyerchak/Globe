@@ -325,11 +325,12 @@ int main(int argc, char *argv[])
     }
 
     // ------------------------------------------------------------------
-    // 5. SourceCode4Deepseek.txt – code/text files from SourceCode/
+    // 5. Dependencies4DeepSeek.txt – code/text files from .dependencies/
+    //    (previously SourceCode4Deepseek.txt from SourceCode/)
     // ------------------------------------------------------------------
     {
-        fs::path sourceCodeDir = rootDir / "SourceCode";
-        fs::path outFile = outDir / "SourceCode4Deepseek.txt";
+        fs::path dependenciesDir = rootDir / ".dependencies";    // changed
+        fs::path outFile = outDir / "4DeepSeekDependencies.txt"; // changed
         std::ofstream out(outFile);
         if (!out)
         {
@@ -337,8 +338,9 @@ int main(int argc, char *argv[])
         }
         else
         {
-            auto files = collectFiles(sourceCodeDir, true, 0);
-            writeFilesSection(out, files, sourceCodeDir, "CONTENTS OF CODE/TEXT FILES FROM SourceCode/");
+            auto files = collectFiles(dependenciesDir, true, 0);
+            writeFilesSection(out, files, dependenciesDir,
+                              "CONTENTS OF CODE/TEXT FILES FROM .dependencies/"); // updated title
             out.close();
             std::cout << "Created " << outFile.filename().string() << " (" << files.size() << " files)\n";
         }
@@ -378,6 +380,96 @@ int main(int argc, char *argv[])
         else
         {
             std::cout << "Note: .Old directory not found, skipping OldCode generation.\n";
+        }
+    }
+
+    // =========================================================================
+    // 7. Combine into two files: 4Deepseek.txt and 4DeepSeekOld.txt
+    // =========================================================================
+    {
+        // ---- 4Deepseek.txt (main content, WITHOUT dependencies) ----
+        std::vector<fs::path> mainPaths;
+        mainPaths.push_back(outDir / "Dir4Deepseek.txt");
+        mainPaths.push_back(outDir / "Code4Deepseek.txt");
+        mainPaths.push_back(outDir / "GameCode4Deepseek.txt");
+        // Dependencies file intentionally excluded – it has its own file now.
+
+        fs::path mainFile = outDir / "4Deepseek.txt";
+        std::ofstream mainOut(mainFile, std::ios::binary);
+        if (!mainOut)
+        {
+            std::cerr << "Error: Cannot create " << mainFile << "\n";
+        }
+        else
+        {
+            for (const auto &path : mainPaths)
+            {
+                if (!fs::exists(path))
+                {
+                    std::cout << "Skipping missing file: " << path.filename().string() << "\n";
+                    continue;
+                }
+                std::ifstream in(path, std::ios::binary);
+                if (in)
+                {
+                    mainOut << in.rdbuf() << "\n";
+                }
+                else
+                {
+                    std::cerr << "Warning: Could not open " << path.filename().string() << "\n";
+                }
+            }
+            mainOut.close();
+            std::cout << "Created " << mainFile.filename().string() << "\n";
+        }
+
+        // ---- 4DeepSeekOld.txt (unchanged) ----
+        std::vector<fs::path> oldPaths;
+        oldPaths.push_back(outDir / "OldDir4Deepseek.txt");
+
+        fs::path oldDir = rootDir / ".Old";
+        if (fs::exists(oldDir) && fs::is_directory(oldDir))
+        {
+            std::vector<std::string> oldSubs;
+            for (const auto &entry : fs::directory_iterator(oldDir))
+            {
+                if (entry.is_directory())
+                    oldSubs.push_back(entry.path().filename().string());
+            }
+            std::sort(oldSubs.begin(), oldSubs.end());
+            for (const auto &sub : oldSubs)
+            {
+                oldPaths.push_back(outDir / ("OldCode" + sub + ".txt"));
+            }
+        }
+
+        fs::path oldFile = outDir / "4DeepSeekOld.txt";
+        std::ofstream oldOut(oldFile, std::ios::binary);
+        if (!oldOut)
+        {
+            std::cerr << "Error: Cannot create " << oldFile << "\n";
+        }
+        else
+        {
+            for (const auto &path : oldPaths)
+            {
+                if (!fs::exists(path))
+                {
+                    std::cout << "Skipping missing file: " << path.filename().string() << "\n";
+                    continue;
+                }
+                std::ifstream in(path, std::ios::binary);
+                if (in)
+                {
+                    oldOut << in.rdbuf() << "\n";
+                }
+                else
+                {
+                    std::cerr << "Warning: Could not open " << path.filename().string() << "\n";
+                }
+            }
+            oldOut.close();
+            std::cout << "Created " << oldFile.filename().string() << "\n";
         }
     }
 
