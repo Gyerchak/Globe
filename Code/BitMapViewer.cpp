@@ -2,8 +2,7 @@
 // Compile: g++ -std=c++20 Code/BitMapViewer.cpp -o Executables/BitMapViewer.exe -static
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "../SourceCode/stb_image_write.h"
-
+#include "../.dependencies/stb_image_write.h"
 #include <cstdint>
 #include <vector>
 #include <string>
