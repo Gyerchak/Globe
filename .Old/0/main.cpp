@@ -1,1 +1,0 @@
-g++ - std = c++ 20 - I / path / to / png++ main.cpp - lpng - lz - o my_app
