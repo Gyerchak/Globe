@@ -78,6 +78,7 @@ Data/
 4DeepSeek/
 Executables/
 Data4Deepseek.exe
+.dependencies/
 
 #Switch ON BY # 
 .Old/
