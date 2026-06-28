@@ -177,7 +177,7 @@ int main()
     // Input: the 2:1 16‑bit map created with gdalwarp
     fs::path inFile = exePath / "Input" / "GEBCO_2to1_16bit.bin";
     // Output: the 8‑bit compressed heightmap
-    fs::path outFile = exePath / "Input" / "HeightMap.bin";
+    fs::path outFile = exePath / "Output" / "HeightMap.bin";
 
     std::cout << "Input:  " << inFile.string() << "\n";
     std::cout << "Output: " << outFile.string() << "\n";
