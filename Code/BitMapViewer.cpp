@@ -49,8 +49,8 @@ Color heightToColor(uint8_t h)
         {0.08f, 0, 100, 0},     // dark green
         {0.16f, 128, 128, 0},   // olive green
         {0.25f, 0, 255, 0},     // green
-        {0.33f, 255, 255, 0},   // yellow
-        {0.41f, 127, 255, 0},   // lemon green
+        {0.33f, 127, 255, 0},   // lemon green
+        {0.41f, 255, 255, 0},   // yellow
         {0.50f, 255, 165, 0},   // orange
         {0.58f, 255, 0, 0},     // red
         {0.66f, 255, 192, 203}, // pink
