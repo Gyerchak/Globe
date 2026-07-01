@@ -134,6 +134,7 @@ VkResult glfwCreateWindowSurface(VkInstance a, GLFWwindow* b, const VkAllocation
 #include <optional>
 #include <set>
 #include <stdexcept>
+#include <chrono>
 #include <vector>
 
 constexpr int WIDTH = 1280;
@@ -264,6 +265,8 @@ private:
     bool waterOverlay = false;
     glm::vec2 lastMousePos;
     bool rightMouseDown = false, middleMouseDown = false;
+    bool keys[512] = {};
+    float deltaTime = 0.0f;
 
     // Base path for assets (set from executable location)
     std::string basePath = ".";
@@ -273,7 +276,7 @@ private:
     VkDeviceMemory depthImageMemory = VK_NULL_HANDLE;
     VkImageView depthImageView = VK_NULL_HANDLE;
 
-    // Input callbacks (same as before)
+    // Input callbacks
     static void keyCallback(GLFWwindow *w, int key, int, int action, int mods)
     {
         auto *app = reinterpret_cast<GlobeApp *>(glfwGetWindowUserPointer(w));
@@ -289,29 +292,8 @@ private:
             if (key == GLFW_KEY_ESCAPE)
                 glfwSetWindowShouldClose(w, GLFW_TRUE);
         }
-        if (action == GLFW_PRESS || action == GLFW_REPEAT)
-        {
-            float mult = (mods & GLFW_MOD_SHIFT) ? 3.0f : 1.0f;
-            float rotSpeed = 0.02f * mult;
-            float zoomSpeed = 0.1f * mult;
-            if (key == GLFW_KEY_W)
-                app->camPitch += rotSpeed;
-            if (key == GLFW_KEY_S)
-                app->camPitch -= rotSpeed;
-            if (key == GLFW_KEY_A)
-                app->camYaw -= rotSpeed;
-            if (key == GLFW_KEY_D)
-                app->camYaw += rotSpeed;
-            if (key == GLFW_KEY_Q)
-                app->camRoll += rotSpeed;
-            if (key == GLFW_KEY_E)
-                app->camRoll -= rotSpeed;
-            if (key == GLFW_KEY_Z)
-                app->camDistance -= zoomSpeed;
-            if (key == GLFW_KEY_X)
-                app->camDistance += zoomSpeed;
-            app->camDistance = glm::clamp(app->camDistance, 1.2f, 10.0f);
-        }
+        if (key >= 0 && key < 512)
+            app->keys[key] = (action == GLFW_PRESS || action == GLFW_REPEAT);
     }
     static void mouseButtonCallback(GLFWwindow *w, int button, int action, int)
     {
@@ -344,8 +326,8 @@ private:
     static void scrollCallback(GLFWwindow *w, double, double yoffset)
     {
         auto *app = reinterpret_cast<GlobeApp *>(glfwGetWindowUserPointer(w));
-        app->camDistance -= static_cast<float>(yoffset) * 0.2f;
-        app->camDistance = glm::clamp(app->camDistance, 1.2f, 10.0f);
+        app->camDistance *= (1.0f - static_cast<float>(yoffset) * 0.15f);
+        app->camDistance = glm::clamp(app->camDistance, 0.05f, 1000.0f);
     }
 
     // ---------- Vulkan helpers (same as before) ----------
@@ -1621,8 +1603,13 @@ private:
 
     void mainLoop()
     {
+        auto lastTime = std::chrono::high_resolution_clock::now();
         while (!glfwWindowShouldClose(window))
         {
+            auto currentTime = std::chrono::high_resolution_clock::now();
+            deltaTime = std::chrono::duration<float>(currentTime - lastTime).count();
+            lastTime = currentTime;
+
             glfwPollEvents();
             updateCamera();
             drawFrame();
@@ -1632,6 +1619,21 @@ private:
 
     void updateCamera()
     {
+        // Smooth movement with delta time
+        float speed = 0.8f * deltaTime;
+        if (keys[GLFW_KEY_LEFT_SHIFT] || keys[GLFW_KEY_RIGHT_SHIFT])
+            speed *= 3.0f;
+
+        if (keys[GLFW_KEY_W]) camPitch += speed;
+        if (keys[GLFW_KEY_S]) camPitch -= speed;
+        if (keys[GLFW_KEY_A]) camYaw -= speed;
+        if (keys[GLFW_KEY_D]) camYaw += speed;
+        if (keys[GLFW_KEY_Q]) camRoll += speed;
+        if (keys[GLFW_KEY_E]) camRoll -= speed;
+        if (keys[GLFW_KEY_Z]) camDistance *= (1.0f - speed * 0.5f);
+        if (keys[GLFW_KEY_X]) camDistance *= (1.0f + speed * 0.5f);
+        camDistance = glm::clamp(camDistance, 0.05f, 1000.0f);
+
         float cosPitch = glm::cos(camPitch), sinPitch = glm::sin(camPitch);
         float cosYaw = glm::cos(camYaw), sinYaw = glm::sin(camYaw);
         glm::vec3 camPos;
@@ -1645,7 +1647,11 @@ private:
         glm::vec3 forward = glm::normalize(camTarget - camPos);
         view = glm::rotate(view, camRoll, forward);
         float aspect = static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height);
-        glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100000.0f);
+
+        // Dynamic near/far planes based on distance to avoid z-fighting at any zoom level
+        float nearPlane = glm::max(0.001f, camDistance * 0.005f);
+        float farPlane = glm::max(1000.0f, camDistance * 100.0f);
+        glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, nearPlane, farPlane);
         proj[1][1] *= -1;
         proj[2][2] = proj[2][2] * 0.5f + proj[3][2] * 0.5f;
         proj[2][3] = proj[2][3] * 0.5f + proj[3][3] * 0.5f;
