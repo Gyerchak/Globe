@@ -327,7 +327,7 @@ private:
     {
         auto *app = reinterpret_cast<GlobeApp *>(glfwGetWindowUserPointer(w));
         app->camDistance *= (1.0f - static_cast<float>(yoffset) * 0.15f);
-        app->camDistance = glm::clamp(app->camDistance, 0.05f, 1000.0f);
+        app->camDistance = glm::clamp(app->camDistance, 1.08f, 5000.0f);
     }
 
     // ---------- Vulkan helpers (same as before) ----------
@@ -978,7 +978,7 @@ private:
         ds.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
         ds.depthTestEnable = VK_TRUE;
         ds.depthWriteEnable = VK_TRUE;
-        ds.depthCompareOp = VK_COMPARE_OP_LESS;
+        ds.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
 
         VkPipelineColorBlendAttachmentState cba{};
         cba.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
@@ -1556,7 +1556,7 @@ private:
         rpi.renderArea = {{0, 0}, swapChainExtent};
 
         VkClearValue colorClear{}, depthClear{};
-        colorClear.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+        colorClear.color = {{0.35f, 0.55f, 0.75f, 1.0f}};
         depthClear.depthStencil = {1.0f, 0};
         std::array<VkClearValue, 2> clears = {colorClear, depthClear};
         rpi.clearValueCount = 2;
@@ -1632,7 +1632,7 @@ private:
         if (keys[GLFW_KEY_E]) camRoll -= speed;
         if (keys[GLFW_KEY_Z]) camDistance *= (1.0f - speed * 0.5f);
         if (keys[GLFW_KEY_X]) camDistance *= (1.0f + speed * 0.5f);
-        camDistance = glm::clamp(camDistance, 0.05f, 1000.0f);
+        camDistance = glm::clamp(camDistance, 1.08f, 5000.0f);
 
         float cosPitch = glm::cos(camPitch), sinPitch = glm::sin(camPitch);
         float cosYaw = glm::cos(camYaw), sinYaw = glm::sin(camYaw);
@@ -1648,10 +1648,10 @@ private:
         view = glm::rotate(view, camRoll, forward);
         float aspect = static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height);
 
-        // Dynamic near/far planes based on distance to avoid z-fighting at any zoom level
-        float nearPlane = glm::max(0.001f, camDistance * 0.005f);
-        float farPlane = glm::max(1000.0f, camDistance * 100.0f);
-        glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, nearPlane, farPlane);
+        // Dynamic near/far planes — tight frustum for best depth precision at any zoom level
+        float nearPlane = glm::max(0.001f, camDistance * 0.0005f);
+        float farPlane = glm::max(100.0f, camDistance * 5.0f);
+        glm::mat4 proj = glm::perspective(glm::radians(60.0f), aspect, nearPlane, farPlane);
         proj[1][1] *= -1;
         proj[2][2] = proj[2][2] * 0.5f + proj[3][2] * 0.5f;
         proj[2][3] = proj[2][3] * 0.5f + proj[3][3] * 0.5f;

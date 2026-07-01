@@ -28,11 +28,11 @@ void main() {
     float u_shift = fract(0.5 - inUV.x);
     float u_scaled = u_shift * 18.0;
     uint col = uint(min(u_scaled, 17.99999));
-    float tileUV_x = u_scaled - float(col);
+    float tileUV_x = clamp(u_scaled - float(col), 0.008, 0.992);
 
     float v_scaled = min(inUV.y * 9.0, 8.99999);
     uint row = uint(v_scaled);
-    float tileUV_y = v_scaled - float(row);
+    float tileUV_y = clamp(v_scaled - float(row), 0.008, 0.992);
 
     uint tileIndex = row * 18u + col;
     vec2 tileUV = vec2(tileUV_x, tileUV_y);
@@ -42,7 +42,7 @@ void main() {
     float elevation = lut.heights[idx];
 
     vec3 normal = normalize(inPos);
-    vec3 pos = inPos + normal * elevation * 0.00003;
+    vec3 pos = inPos + normal * elevation * 0.000008;
 
     vHeight = elevation;
     vUV = inUV;
