@@ -1,11 +1,17 @@
 // GlobeVulkan.cpp – Vulkan globe viewer using 162 height tiles
-// Compile: g++ -std=c++20 Code/GlobeVulkan.cpp -o Executables/GlobeVulkan.exe
+// Compile: g++ -std=c++20 -static-libgcc -static-libstdc++ Code/GlobeVulkan.cpp -o Executables/GlobeVulkan.exe
 //   -I /c/VulkanSDK/1.4.350.0/Include
-//   -I /c/glfw-3.4.bin.WIN64/include
-//   -L /c/VulkanSDK/1.4.350.0/Lib
-//   -L /c/glfw-3.4.bin.WIN64/lib-mingw-w64
-//   -L .dependencies
-//   -lvulkan -lglfw3 -mwindows
+//   -I /c/msys64/ucrt64/include
+//   -I .dependencies
+//   -L /c/msys64/ucrt64/lib
+//   -lvulkan-1
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 #define GLM_FORCE_PURE
 #define GLM_FORCE_CTOR_INIT
@@ -14,7 +20,105 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #define GLFW_INCLUDE_VULKAN
+#undef GLFW_DLL
+#undef GLFWAPI
+#define GLFWAPI
 #include <GLFW/glfw3.h>
+
+// glfw3.dll runtime loader — loaded manually from .dlls/ to avoid
+// Windows-loader dependency resolution before main().
+static HMODULE s_glfw = nullptr;
+
+static void loadGlfw()
+{
+    if (!s_glfw)
+        s_glfw = LoadLibraryA("glfw3.dll");
+}
+
+// Forwarding stubs — same names as GLFW declarations, so the C++ linker
+// uses these instead of the glfw3.dll import library (which we don't link).
+// GLFWAPI is cleared above so glfw3.h declares them without dllimport.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-function-type"
+extern "C" {
+int glfwInit() {
+    static auto fn = (int(*)())GetProcAddress(s_glfw, "glfwInit");
+    return fn();
+}
+void glfwPollEvents() {
+    static auto fn = (void(*)())GetProcAddress(s_glfw, "glfwPollEvents");
+    fn();
+}
+void glfwTerminate() {
+    static auto fn = (void(*)())GetProcAddress(s_glfw, "glfwTerminate");
+    fn();
+}
+void glfwWindowHint(int a, int b) {
+    static auto fn = (void(*)(int,int))GetProcAddress(s_glfw, "glfwWindowHint");
+    fn(a, b);
+}
+GLFWwindow* glfwCreateWindow(int a, int b, const char* c, GLFWmonitor* d, GLFWwindow* e) {
+    static auto fn = (GLFWwindow*(*)(int,int,const char*,GLFWmonitor*,GLFWwindow*))GetProcAddress(s_glfw, "glfwCreateWindow");
+    return fn(a, b, c, d, e);
+}
+void glfwDestroyWindow(GLFWwindow* a) {
+    static auto fn = (void(*)(GLFWwindow*))GetProcAddress(s_glfw, "glfwDestroyWindow");
+    fn(a);
+}
+void glfwSetWindowUserPointer(GLFWwindow* a, void* b) {
+    static auto fn = (void(*)(GLFWwindow*,void*))GetProcAddress(s_glfw, "glfwSetWindowUserPointer");
+    fn(a, b);
+}
+GLFWkeyfun glfwSetKeyCallback(GLFWwindow* a, GLFWkeyfun b) {
+    static auto fn = (GLFWkeyfun(*)(GLFWwindow*,GLFWkeyfun))GetProcAddress(s_glfw, "glfwSetKeyCallback");
+    return fn(a, b);
+}
+GLFWmousebuttonfun glfwSetMouseButtonCallback(GLFWwindow* a, GLFWmousebuttonfun b) {
+    static auto fn = (GLFWmousebuttonfun(*)(GLFWwindow*,GLFWmousebuttonfun))GetProcAddress(s_glfw, "glfwSetMouseButtonCallback");
+    return fn(a, b);
+}
+GLFWcursorposfun glfwSetCursorPosCallback(GLFWwindow* a, GLFWcursorposfun b) {
+    static auto fn = (GLFWcursorposfun(*)(GLFWwindow*,GLFWcursorposfun))GetProcAddress(s_glfw, "glfwSetCursorPosCallback");
+    return fn(a, b);
+}
+GLFWscrollfun glfwSetScrollCallback(GLFWwindow* a, GLFWscrollfun b) {
+    static auto fn = (GLFWscrollfun(*)(GLFWwindow*,GLFWscrollfun))GetProcAddress(s_glfw, "glfwSetScrollCallback");
+    return fn(a, b);
+}
+void* glfwGetWindowUserPointer(GLFWwindow* a) {
+    static auto fn = (void*(*)(GLFWwindow*))GetProcAddress(s_glfw, "glfwGetWindowUserPointer");
+    return fn(a);
+}
+void glfwGetFramebufferSize(GLFWwindow* a, int* b, int* c) {
+    static auto fn = (void(*)(GLFWwindow*,int*,int*))GetProcAddress(s_glfw, "glfwGetFramebufferSize");
+    fn(a, b, c);
+}
+int glfwGetKey(GLFWwindow* a, int b) {
+    static auto fn = (int(*)(GLFWwindow*,int))GetProcAddress(s_glfw, "glfwGetKey");
+    return fn(a, b);
+}
+void glfwGetCursorPos(GLFWwindow* a, double* b, double* c) {
+    static auto fn = (void(*)(GLFWwindow*,double*,double*))GetProcAddress(s_glfw, "glfwGetCursorPos");
+    fn(a, b, c);
+}
+int glfwWindowShouldClose(GLFWwindow* a) {
+    static auto fn = (int(*)(GLFWwindow*))GetProcAddress(s_glfw, "glfwWindowShouldClose");
+    return fn(a);
+}
+void glfwSetWindowShouldClose(GLFWwindow* a, int b) {
+    static auto fn = (void(*)(GLFWwindow*,int))GetProcAddress(s_glfw, "glfwSetWindowShouldClose");
+    fn(a, b);
+}
+const char** glfwGetRequiredInstanceExtensions(uint32_t* a) {
+    static auto fn = (const char**( *)(uint32_t*))GetProcAddress(s_glfw, "glfwGetRequiredInstanceExtensions");
+    return fn(a);
+}
+VkResult glfwCreateWindowSurface(VkInstance a, GLFWwindow* b, const VkAllocationCallbacks* c, VkSurfaceKHR* d) {
+    static auto fn = (VkResult(*)(VkInstance,GLFWwindow*,const VkAllocationCallbacks*,VkSurfaceKHR*))GetProcAddress(s_glfw, "glfwCreateWindowSurface");
+    return fn(a, b, c, d);
+}
+}
+#pragma GCC diagnostic pop
 
 #include <algorithm>
 #include <array>
@@ -28,19 +132,9 @@
 #include <stdexcept>
 #include <vector>
 
-#ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#endif
-
 constexpr int WIDTH = 1280;
 constexpr int HEIGHT = 720;
-constexpr int MAX_FRAMES_IN_FLIGHT = 2;
-
-// We are NOT using validation layers for now (they caused crashes)
-const bool enableValidationLayers = false;
+constexpr size_t MAX_FRAMES_IN_FLIGHT = 2;
 
 struct Vertex
 {
@@ -80,14 +174,14 @@ struct UniformBufferObject
 // Push constants for tile drawing
 struct TilePushConstants
 {
-    uint32_t tileIndex;
-    float lonMin, lonMax, latMin, latMax;
     uint32_t waterOverlay; // 0 or 1
 };
 
 class GlobeApp
 {
 public:
+    void setBasePath(const std::string &path) { basePath = path; }
+
     void run()
     {
         initWindow();
@@ -158,7 +252,7 @@ private:
     uint32_t currentFrame = 0;
 
     // Camera state
-    float camDistance = 15000.0f;
+    float camDistance = 2.5f;
     float camPitch = 0.0f;
     float camYaw = 0.0f;
     float camRoll = 0.0f;
@@ -166,6 +260,9 @@ private:
     bool waterOverlay = false;
     glm::vec2 lastMousePos;
     bool rightMouseDown = false, middleMouseDown = false;
+
+    // Base path for assets (set from executable location)
+    std::string basePath = ".";
 
     // Depth buffer
     VkImage depthImage = VK_NULL_HANDLE;
@@ -183,7 +280,7 @@ private:
             if (key == GLFW_KEY_R)
             {
                 app->camPitch = app->camYaw = app->camRoll = 0.0f;
-                app->camDistance = 15000.0f;
+                app->camDistance = 2.5f;
             }
             if (key == GLFW_KEY_ESCAPE)
                 glfwSetWindowShouldClose(w, GLFW_TRUE);
@@ -192,7 +289,7 @@ private:
         {
             float mult = (mods & GLFW_MOD_SHIFT) ? 3.0f : 1.0f;
             float rotSpeed = 0.02f * mult;
-            float zoomSpeed = 200.0f * mult;
+            float zoomSpeed = 0.1f * mult;
             if (key == GLFW_KEY_W)
                 app->camPitch -= rotSpeed;
             if (key == GLFW_KEY_S)
@@ -210,7 +307,7 @@ private:
             if (key == GLFW_KEY_X)
                 app->camDistance += zoomSpeed;
             app->camPitch = glm::clamp(app->camPitch, -glm::half_pi<float>(), glm::half_pi<float>());
-            app->camDistance = glm::clamp(app->camDistance, 1000.0f, 50000.0f);
+            app->camDistance = glm::clamp(app->camDistance, 1.2f, 10.0f);
         }
     }
     static void mouseButtonCallback(GLFWwindow *w, int button, int action, int)
@@ -245,8 +342,8 @@ private:
     static void scrollCallback(GLFWwindow *w, double, double yoffset)
     {
         auto *app = reinterpret_cast<GlobeApp *>(glfwGetWindowUserPointer(w));
-        app->camDistance -= yoffset * 200.0f;
-        app->camDistance = glm::clamp(app->camDistance, 1000.0f, 50000.0f);
+        app->camDistance -= static_cast<float>(yoffset) * 0.2f;
+        app->camDistance = glm::clamp(app->camDistance, 1.2f, 10.0f);
     }
 
     // ---------- Vulkan helpers (same as before) ----------
@@ -265,10 +362,10 @@ private:
         std::ifstream file(filename, std::ios::ate | std::ios::binary);
         if (!file.is_open())
             throw std::runtime_error("failed to open file: " + filename);
-        size_t fileSize = (size_t)file.tellg();
+        size_t fileSize = static_cast<size_t>(file.tellg());
         std::vector<char> buffer(fileSize);
         file.seekg(0);
-        file.read(buffer.data(), fileSize);
+        file.read(buffer.data(), static_cast<std::streamsize>(fileSize));
         return buffer;
     }
 
@@ -534,9 +631,9 @@ private:
         VkApplicationInfo ai{};
         ai.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
         ai.pApplicationName = "GlobeVulkan";
-        ai.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-        ai.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-        ai.apiVersion = VK_API_VERSION_1_0;
+        ai.applicationVersion = (1u << 22) | (0u << 12) | 0u;
+        ai.engineVersion = (1u << 22) | (0u << 12) | 0u;
+        ai.apiVersion = (0u << 29) | (1u << 22) | (0u << 12) | 0u;
 
         uint32_t glfwCnt = 0;
         const char **glfwExts = glfwGetRequiredInstanceExtensions(&glfwCnt);
@@ -545,7 +642,7 @@ private:
         VkInstanceCreateInfo ci{};
         ci.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
         ci.pApplicationInfo = &ai;
-        ci.enabledExtensionCount = (uint32_t)exts.size();
+        ci.enabledExtensionCount = static_cast<uint32_t>(exts.size());
         ci.ppEnabledExtensionNames = exts.data();
         if (vkCreateInstance(&ci, nullptr, &instance) != VK_SUCCESS)
             throw std::runtime_error("failed to create instance!");
@@ -672,7 +769,7 @@ private:
         VkPhysicalDeviceFeatures feats{};
         VkDeviceCreateInfo dci{};
         dci.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-        dci.queueCreateInfoCount = (uint32_t)qcis.size();
+        dci.queueCreateInfoCount = static_cast<uint32_t>(qcis.size());
         dci.pQueueCreateInfos = qcis.data();
         dci.pEnabledFeatures = &feats;
         const char *swapExt = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
@@ -751,7 +848,7 @@ private:
             return caps.currentExtent;
         int w, h;
         glfwGetFramebufferSize(window, &w, &h);
-        return {(uint32_t)w, (uint32_t)h};
+        return {static_cast<uint32_t>(w), static_cast<uint32_t>(h)};
     }
 
     void createImageViews()
@@ -798,7 +895,7 @@ private:
         std::array<VkAttachmentDescription, 2> atts = {colorAtt, depthAtt};
         VkRenderPassCreateInfo rpi{};
         rpi.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-        rpi.attachmentCount = (uint32_t)atts.size();
+        rpi.attachmentCount = static_cast<uint32_t>(atts.size());
         rpi.pAttachments = atts.data();
         rpi.subpassCount = 1;
         rpi.pSubpasses = &subpass;
@@ -821,7 +918,7 @@ private:
         bindings[1].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
         // height LUT
         bindings[2].binding = 2;
-        bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         bindings[2].descriptorCount = 1;
         bindings[2].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
         // colour ramp
@@ -832,7 +929,7 @@ private:
 
         VkDescriptorSetLayoutCreateInfo li{};
         li.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        li.bindingCount = (uint32_t)bindings.size();
+        li.bindingCount = static_cast<uint32_t>(bindings.size());
         li.pBindings = bindings.data();
         if (vkCreateDescriptorSetLayout(device, &li, nullptr, &descriptorSetLayout) != VK_SUCCESS)
             throw std::runtime_error("failed to create descriptor set layout!");
@@ -840,14 +937,22 @@ private:
 
     void createGraphicsPipeline()
     {
-        auto vertCode = readFile("Shaders/vert.spv");
-        auto fragCode = readFile("Shaders/frag.spv");
+        auto vertCode = readFile(basePath + "/Shaders/vert.spv");
+        auto fragCode = readFile(basePath + "/Shaders/frag.spv");
         VkShaderModule vertMod = createShaderModule(vertCode);
         VkShaderModule fragMod = createShaderModule(fragCode);
 
-        VkPipelineShaderStageCreateInfo stages[] = {
-            {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_VERTEX_BIT, vertMod, "main"},
-            {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_FRAGMENT_BIT, fragMod, "main"}};
+        VkPipelineShaderStageCreateInfo vertStage{};
+        vertStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        vertStage.stage = VK_SHADER_STAGE_VERTEX_BIT;
+        vertStage.module = vertMod;
+        vertStage.pName = "main";
+        VkPipelineShaderStageCreateInfo fragStage{};
+        fragStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        fragStage.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+        fragStage.module = fragMod;
+        fragStage.pName = "main";
+        VkPipelineShaderStageCreateInfo stages[] = {vertStage, fragStage};
 
         auto bindingDesc = Vertex::getBindingDescription();
         auto attrDescs = Vertex::getAttributeDescriptions();
@@ -855,7 +960,7 @@ private:
         vi.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
         vi.vertexBindingDescriptionCount = 1;
         vi.pVertexBindingDescriptions = &bindingDesc;
-        vi.vertexAttributeDescriptionCount = (uint32_t)attrDescs.size();
+        vi.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDescs.size());
         vi.pVertexAttributeDescriptions = attrDescs.data();
 
         VkPipelineInputAssemblyStateCreateInfo ia{};
@@ -863,7 +968,7 @@ private:
         ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
         ia.primitiveRestartEnable = VK_FALSE;
 
-        VkViewport vp{0, 0, (float)swapChainExtent.width, (float)swapChainExtent.height, 0, 1};
+        VkViewport vp{0, 0, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0, 1};
         VkRect2D sc{{0, 0}, swapChainExtent};
         VkPipelineViewportStateCreateInfo vs{};
         vs.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -885,7 +990,7 @@ private:
 
         VkPipelineDepthStencilStateCreateInfo ds{};
         ds.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-        ds.depthTestEnable = VK_FALSE;
+        ds.depthTestEnable = VK_TRUE;
         ds.depthWriteEnable = VK_TRUE;
         ds.depthCompareOp = VK_COMPARE_OP_LESS;
 
@@ -965,26 +1070,26 @@ private:
     // ---------- Sphere mesh (same as before) ----------
     void prepareSphere()
     {
-        constexpr int lonSegs = 256, latSegs = 128;
+        constexpr size_t lonSegs = 256, latSegs = 128;
         vertices.clear();
         indices.clear();
-        for (int j = 0; j <= latSegs; ++j)
+        for (size_t j = 0; j <= latSegs; ++j)
         {
-            float theta = j * glm::pi<float>() / latSegs;
-            float y = cos(theta), sinTheta = sin(theta);
-            for (int i = 0; i <= lonSegs; ++i)
+            float theta = static_cast<float>(j) * glm::pi<float>() / static_cast<float>(latSegs);
+            float y = glm::cos(theta), sinTheta = glm::sin(theta);
+            for (size_t i = 0; i <= lonSegs; ++i)
             {
-                float phi = i * 2.0f * glm::pi<float>() / lonSegs;
-                float x = cos(phi) * sinTheta;
-                float z = sin(phi) * sinTheta;
-                vertices.push_back({{x, y, z}, {float(i) / lonSegs, float(j) / latSegs}});
+                float phi = static_cast<float>(i) * 2.0f * glm::pi<float>() / static_cast<float>(lonSegs);
+                float x = glm::cos(phi) * sinTheta;
+                float z = glm::sin(phi) * sinTheta;
+                vertices.push_back({{x, y, z}, {static_cast<float>(i) / static_cast<float>(lonSegs), static_cast<float>(j) / static_cast<float>(latSegs)}});
             }
         }
-        for (int j = 0; j < latSegs; ++j)
-            for (int i = 0; i < lonSegs; ++i)
+        for (size_t j = 0; j < latSegs; ++j)
+            for (size_t i = 0; i < lonSegs; ++i)
             {
-                uint32_t first = j * (lonSegs + 1) + i;
-                uint32_t second = first + lonSegs + 1;
+                uint32_t first = static_cast<uint32_t>(j * (lonSegs + 1) + i);
+                uint32_t second = first + static_cast<uint32_t>(lonSegs + 1);
                 indices.push_back(first);
                 indices.push_back(second);
                 indices.push_back(first + 1);
@@ -1033,8 +1138,9 @@ private:
             for (int col = 0; col < TILES_COLS; ++col)
             {
                 int tileIdx = row * TILES_COLS + col;
+                size_t uTileIdx = static_cast<size_t>(tileIdx);
                 // Build filename: XY_AB.bin
-                std::string fname = "Output/DividedHeightMap/";
+                std::string fname = basePath + "/Output/DividedHeightMap/";
                 fname += colNames[col];
                 fname += std::to_string(row);
                 fname += "_";
@@ -1055,17 +1161,18 @@ private:
                 std::ifstream file(fname, std::ios::binary | std::ios::ate);
                 if (!file.is_open())
                     throw std::runtime_error("Cannot open " + fname);
-                size_t size = file.tellg();
+                auto fsize = file.tellg();
+                size_t size = (fsize > 0) ? static_cast<size_t>(fsize) : 0;
                 file.seekg(0);
                 std::vector<uint8_t> pixels(size);
-                file.read(reinterpret_cast<char *>(pixels.data()), size);
+                file.read(reinterpret_cast<char *>(pixels.data()), static_cast<std::streamsize>(size));
                 file.close();
 
                 int w = colWidths[col];
                 int h = rowHeights[row];
 
                 // Create staging buffer and upload
-                VkDeviceSize imageSize = w * h;
+                VkDeviceSize imageSize = static_cast<VkDeviceSize>(w) * static_cast<VkDeviceSize>(h);
                 VkBuffer staging;
                 VkDeviceMemory stagingMem;
                 createBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, staging, stagingMem);
@@ -1074,18 +1181,20 @@ private:
                 memcpy(data, pixels.data(), imageSize);
                 vkUnmapMemory(device, stagingMem);
 
-                createImage(w, h, VK_FORMAT_R8_UNORM, VK_IMAGE_TILING_OPTIMAL,
+                uint32_t uw = static_cast<uint32_t>(w);
+                uint32_t uh = static_cast<uint32_t>(h);
+                createImage(uw, uh, VK_FORMAT_R8_UNORM, VK_IMAGE_TILING_OPTIMAL,
                             VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                            tileImages[tileIdx], tileImageMemories[tileIdx]);
-                transitionImageLayout(tileImages[tileIdx], VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-                copyBufferToImage(staging, tileImages[tileIdx], w, h);
-                transitionImageLayout(tileImages[tileIdx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                            tileImages[uTileIdx], tileImageMemories[uTileIdx]);
+                transitionImageLayout(tileImages[uTileIdx], VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+                copyBufferToImage(staging, tileImages[uTileIdx], uw, uh);
+                transitionImageLayout(tileImages[uTileIdx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
                 vkDestroyBuffer(device, staging, nullptr);
                 vkFreeMemory(device, stagingMem, nullptr);
 
-                tileImageViews[tileIdx] = createImageView(tileImages[tileIdx], VK_FORMAT_R8_UNORM);
-                tileSamplers[tileIdx] = createSampler();
+                tileImageViews[uTileIdx] = createImageView(tileImages[uTileIdx], VK_FORMAT_R8_UNORM);
+                tileSamplers[uTileIdx] = createSampler();
             }
         }
     }
@@ -1094,7 +1203,7 @@ private:
     void createColorRamp()
     {
         std::array<uint8_t, 256 * 4> ramp;
-        for (int i = 0; i < 256; ++i)
+        for (size_t i = 0; i < 256; ++i)
         {
             if (i == 0)
             {
@@ -1104,7 +1213,7 @@ private:
                 ramp[4 * i + 3] = 255;
                 continue;
             }
-            float t = (i - 1) / 254.0f;
+            float t = static_cast<float>(i - 1) / 254.0f;
             struct Stop
             {
                 float pos;
@@ -1147,15 +1256,40 @@ private:
     {
         // ... (identical to previous version) ...
         constexpr std::array<double, 10> subsea = {-400, -300, -250, -200, -150, -100, -50, -20, -7.8, -1.0 / 32768};
-        constexpr std::array<double, 245> positive = {/* ... your full array ... */ 8846.0};
+        constexpr std::array<double, 245> positive = {
+            7.8, 15.5, 25.8, 36.2, 46.5, 54.3, 62.0, 69.8, 77.5, 85.3,
+            93.0, 100.8, 108.5, 113.7, 118.8, 124.0, 129.2, 134.3, 139.5, 144.7,
+            149.8, 155.0, 160.2, 165.3, 170.5, 174.9, 179.4, 183.8, 188.2, 192.6,
+            197.1, 201.5, 205.9, 210.4, 214.8, 219.2, 223.6, 228.1, 232.5, 236.9,
+            241.4, 245.8, 250.2, 254.6, 259.1, 263.5, 267.9, 272.4, 276.8, 281.2,
+            285.6, 290.1, 294.5, 298.9, 303.4, 307.8, 312.2, 316.6, 321.1, 325.5,
+            331.7, 337.9, 344.1, 350.3, 356.5, 362.7, 368.9, 375.1, 381.3, 387.5,
+            393.7, 399.9, 406.1, 412.3, 418.5, 426.3, 434.0, 441.8, 449.5, 459.8,
+            470.2, 480.5, 490.8, 501.2, 511.5, 521.8, 532.2, 542.5, 552.8, 563.2,
+            573.5, 589.0, 604.5, 620.0, 635.5, 651.0, 666.5, 682.0, 697.5, 713.0,
+            728.5, 744.0, 759.5, 790.5, 806.0, 821.5, 852.5, 868.0, 883.5, 914.5,
+            945.5, 961.0, 976.5, 1007.5, 1038.5, 1069.5, 1085.0, 1100.5, 1131.5, 1162.5,
+            1193.5, 1224.5, 1255.5, 1271.0, 1286.5, 1317.5, 1348.5, 1379.5, 1410.5, 1441.5,
+            1472.5, 1503.5, 1534.5, 1565.5, 1596.5, 1627.5, 1658.5, 1689.5, 1720.5, 1751.5,
+            1782.5, 1813.5, 1844.5, 1875.5, 1906.5, 1937.5, 1968.5, 1999.5, 2030.5, 2061.5,
+            2108.0, 2170.0, 2232.0, 2294.0, 2356.0, 2418.0, 2480.0, 2542.0, 2604.0, 2666.0,
+            2728.0, 2790.0, 2852.0, 2914.0, 2976.0, 3038.0, 3100.0, 3162.0, 3224.0, 3286.0,
+            3348.0, 3410.0, 3472.0, 3534.0, 3596.0, 3658.0, 3720.0, 3782.0, 3844.0, 3906.0,
+            3968.0, 4030.0, 4092.0, 4154.0, 4216.0, 4278.0, 4340.0, 4402.0, 4464.0, 4526.0,
+            4588.0, 4650.0, 4712.0, 4774.0, 4836.0, 4898.0, 4960.0, 5022.0, 5084.0, 5146.0,
+            5208.0, 5270.0, 5332.0, 5394.0, 5456.0, 5518.0, 5580.0, 5642.0, 5704.0, 5766.0,
+            5828.0, 5890.0, 5952.0, 6014.0, 6076.0, 6138.0, 6200.0, 6262.0, 6324.0, 6386.0,
+            6448.0, 6510.0, 6572.0, 6634.0, 6696.0, 6758.0, 6820.0, 6882.0, 6944.0, 7006.0,
+            7068.0, 7130.0, 7192.0, 7254.0, 7316.0, 7386.0, 7466.0, 7556.0, 7666.0, 7796.0,
+            7946.0, 8126.0, 8336.0, 8576.0, 8846.0};
         std::array<float, 256> heights;
         heights[0] = 0.0f;
-        for (int i = 1; i <= 10; ++i)
-            heights[i] = (float)subsea[i - 1];
-        for (int i = 11; i <= 255; ++i)
-            heights[i] = (float)positive[i - 11];
+        for (size_t i = 1; i <= 10; ++i)
+            heights[i] = static_cast<float>(subsea[i - 1]);
+        for (size_t i = 11; i <= 255; ++i)
+            heights[i] = static_cast<float>(positive[i - 11]);
         VkDeviceSize size = sizeof(heights);
-        createBuffer(size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, heightLUTBuffer, heightLUTMemory);
+        createBuffer(size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, heightLUTBuffer, heightLUTMemory);
         void *data;
         vkMapMemory(device, heightLUTMemory, 0, size, 0, &data);
         memcpy(data, heights.data(), size);
@@ -1169,7 +1303,7 @@ private:
         uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
         uniformBuffersMemory.resize(MAX_FRAMES_IN_FLIGHT);
         uniformBuffersMapped.resize(MAX_FRAMES_IN_FLIGHT);
-        for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
         {
             createBuffer(size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformBuffers[i], uniformBuffersMemory[i]);
             vkMapMemory(device, uniformBuffersMemory[i], 0, size, 0, &uniformBuffersMapped[i]);
@@ -1179,11 +1313,12 @@ private:
     // ---------- Descriptor set (array of 162 tile samplers) ----------
     void createDescriptorSet()
     {
-        std::array<VkDescriptorPoolSize, 2> poolSizes = {{{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, TOTAL_TILES + 1}, // tiles + ramp
-                                                          {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 2}}};
+        std::array<VkDescriptorPoolSize, 3> poolSizes = {{{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, TOTAL_TILES + 1}, // tiles + ramp
+                                                           {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
+                                                           {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1}}};
         VkDescriptorPoolCreateInfo pi{};
         pi.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        pi.poolSizeCount = (uint32_t)poolSizes.size();
+        pi.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
         pi.pPoolSizes = poolSizes.data();
         pi.maxSets = 1;
         if (vkCreateDescriptorPool(device, &pi, nullptr, &descriptorPool) != VK_SUCCESS)
@@ -1199,7 +1334,7 @@ private:
 
         // Prepare array of image info for all tiles
         std::vector<VkDescriptorImageInfo> tileInfos(TOTAL_TILES);
-        for (int i = 0; i < TOTAL_TILES; ++i)
+        for (size_t i = 0; i < TOTAL_TILES; ++i)
         {
             tileInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             tileInfos[i].imageView = tileImageViews[i];
@@ -1235,7 +1370,7 @@ private:
         lutWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         lutWrite.dstSet = descriptorSet;
         lutWrite.dstBinding = 2;
-        lutWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        lutWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         lutWrite.descriptorCount = 1;
         lutWrite.pBufferInfo = &lutInfo;
 
@@ -1255,7 +1390,7 @@ private:
         // Ensure pNext is null (avoid the validation error)
         for (auto &w : writes)
             w.pNext = nullptr;
-        vkUpdateDescriptorSets(device, (uint32_t)writes.size(), writes.data(), 0, nullptr);
+        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
     }
 
     void createCommandBuffers()
@@ -1265,7 +1400,7 @@ private:
         ai.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         ai.commandPool = commandPool;
         ai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        ai.commandBufferCount = (uint32_t)commandBuffers.size();
+        ai.commandBufferCount = static_cast<uint32_t>(commandBuffers.size());
         vkAllocateCommandBuffers(device, &ai, commandBuffers.data());
     }
 
@@ -1296,24 +1431,14 @@ private:
         vkCmdBindIndexBuffer(cmd, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
 
-        // Draw each tile with its push constants
-        for (uint32_t tileIdx = 0; tileIdx < TOTAL_TILES; ++tileIdx)
-        {
-            TilePushConstants pc{};
-            pc.tileIndex = tileIdx;
-            int col = tileIdx % TILES_COLS;
-            int row = tileIdx / TILES_COLS;
-            pc.lonMin = -180.0f + col * 20.0f;
-            pc.lonMax = pc.lonMin + 20.0f;
-            pc.latMax = 90.0f - row * 20.0f;
-            pc.latMin = pc.latMax - 20.0f;
-            pc.waterOverlay = waterOverlay ? 1 : 0;
+        // Single draw call — tile index is computed from UV in the vertex shader
+        TilePushConstants pc{};
+        pc.waterOverlay = waterOverlay ? 1 : 0;
 
-            vkCmdPushConstants(cmd, pipelineLayout,
-                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                               0, sizeof(TilePushConstants), &pc);
-            vkCmdDrawIndexed(cmd, (uint32_t)indices.size(), 1, 0, 0, 0);
-        }
+        vkCmdPushConstants(cmd, pipelineLayout,
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(TilePushConstants), &pc);
+        vkCmdDrawIndexed(cmd, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
         vkCmdEndRenderPass(cmd);
         vkEndCommandBuffer(cmd);
     }
@@ -1328,7 +1453,7 @@ private:
         VkFenceCreateInfo fi{};
         fi.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
         fi.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-        for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
         {
             vkCreateSemaphore(device, &si, nullptr, &imageAvailableSemaphores[i]);
             vkCreateSemaphore(device, &si, nullptr, &renderFinishedSemaphores[i]);
@@ -1349,8 +1474,8 @@ private:
 
     void updateCamera()
     {
-        float cosPitch = cos(camPitch), sinPitch = sin(camPitch);
-        float cosYaw = cos(camYaw), sinYaw = sin(camYaw);
+        float cosPitch = glm::cos(camPitch), sinPitch = glm::sin(camPitch);
+        float cosYaw = glm::cos(camYaw), sinYaw = glm::sin(camYaw);
         glm::vec3 camPos;
         camPos.x = camDistance * cosPitch * sinYaw;
         camPos.y = camDistance * sinPitch;
@@ -1358,9 +1483,11 @@ private:
 
         glm::mat4 view = glm::lookAt(camPos, camTarget, glm::vec3(0, 1, 0));
         view = glm::rotate(view, camRoll, glm::vec3(0, 0, 1));
-        float aspect = swapChainExtent.width / (float)swapChainExtent.height;
+        float aspect = static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height);
         glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100000.0f);
         proj[1][1] *= -1;
+        proj[2][2] = proj[2][2] * 0.5f + proj[3][2] * 0.5f;
+        proj[2][3] = proj[2][3] * 0.5f + proj[3][3] * 0.5f;
 
         UniformBufferObject ubo{};
         ubo.model = glm::mat4(1.0f);
@@ -1378,6 +1505,19 @@ private:
 
         vkResetCommandBuffer(commandBuffers[currentFrame], 0);
         recordCommandBuffer(commandBuffers[currentFrame], imageIndex);
+
+        VkDescriptorBufferInfo uboInfo{};
+        uboInfo.buffer = uniformBuffers[currentFrame];
+        uboInfo.offset = 0;
+        uboInfo.range = sizeof(UniformBufferObject);
+        VkWriteDescriptorSet uboWrite{};
+        uboWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        uboWrite.dstSet = descriptorSet;
+        uboWrite.dstBinding = 1;
+        uboWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        uboWrite.descriptorCount = 1;
+        uboWrite.pBufferInfo = &uboInfo;
+        vkUpdateDescriptorSets(device, 1, &uboWrite, 0, nullptr);
 
         VkSubmitInfo submit{};
         submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -1423,9 +1563,18 @@ int main()
     char absPath[MAX_PATH];
     if (GetFullPathNameA(dllDir.c_str(), MAX_PATH, absPath, nullptr))
         SetDllDirectoryA(absPath);
+    loadGlfw();
+    if (!s_glfw)
+    {
+        std::cerr << "Failed to load glfw3.dll from " << dllDir << std::endl;
+        return EXIT_FAILURE;
+    }
 #endif
 
     GlobeApp app;
+#ifdef _WIN32
+    app.setBasePath(exeDir + "/..");
+#endif
     try
     {
         app.run();
