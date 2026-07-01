@@ -38,8 +38,10 @@ static void loadGlfw()
 // Forwarding stubs — same names as GLFW declarations, so the C++ linker
 // uses these instead of the glfw3.dll import library (which we don't link).
 // GLFWAPI is cleared above so glfw3.h declares them without dllimport.
+#ifdef __GNUC__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wcast-function-type"
+#endif
 extern "C" {
 int glfwInit() {
     static auto fn = (int(*)())GetProcAddress(s_glfw, "glfwInit");
@@ -118,7 +120,9 @@ VkResult glfwCreateWindowSurface(VkInstance a, GLFWwindow* b, const VkAllocation
     return fn(a, b, c, d);
 }
 }
+#ifdef __GNUC__
 #pragma GCC diagnostic pop
+#endif
 
 #include <algorithm>
 #include <array>
@@ -169,6 +173,7 @@ struct UniformBufferObject
     glm::mat4 model;
     glm::mat4 view;
     glm::mat4 proj;
+    glm::vec4 cameraPos; // w unused — needed by fragment shader for fog
 };
 
 // Push constants for tile drawing
@@ -225,13 +230,12 @@ private:
     std::array<VkImage, TOTAL_TILES> tileImages;
     std::array<VkDeviceMemory, TOTAL_TILES> tileImageMemories;
     std::array<VkImageView, TOTAL_TILES> tileImageViews;
-    std::array<VkSampler, TOTAL_TILES> tileSamplers;
+    VkSampler sharedSampler = VK_NULL_HANDLE;
 
     // Colour ramp (256x1 RGBA)
     VkImage colorRampImage = VK_NULL_HANDLE;
     VkDeviceMemory colorRampImageMemory = VK_NULL_HANDLE;
     VkImageView colorRampImageView = VK_NULL_HANDLE;
-    VkSampler colorRampSampler = VK_NULL_HANDLE;
 
     // Height lookup table (256 floats)
     VkBuffer heightLUTBuffer = VK_NULL_HANDLE;
@@ -243,7 +247,7 @@ private:
     std::vector<void *> uniformBuffersMapped;
 
     VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
-    VkDescriptorSet descriptorSet;
+    std::vector<VkDescriptorSet> descriptorSets;
 
     // Sync
     std::vector<VkSemaphore> imageAvailableSemaphores;
@@ -291,22 +295,21 @@ private:
             float rotSpeed = 0.02f * mult;
             float zoomSpeed = 0.1f * mult;
             if (key == GLFW_KEY_W)
-                app->camPitch -= rotSpeed;
-            if (key == GLFW_KEY_S)
                 app->camPitch += rotSpeed;
+            if (key == GLFW_KEY_S)
+                app->camPitch -= rotSpeed;
             if (key == GLFW_KEY_A)
                 app->camYaw -= rotSpeed;
             if (key == GLFW_KEY_D)
                 app->camYaw += rotSpeed;
             if (key == GLFW_KEY_Q)
-                app->camRoll -= rotSpeed;
-            if (key == GLFW_KEY_E)
                 app->camRoll += rotSpeed;
+            if (key == GLFW_KEY_E)
+                app->camRoll -= rotSpeed;
             if (key == GLFW_KEY_Z)
                 app->camDistance -= zoomSpeed;
             if (key == GLFW_KEY_X)
                 app->camDistance += zoomSpeed;
-            app->camPitch = glm::clamp(app->camPitch, -glm::half_pi<float>(), glm::half_pi<float>());
             app->camDistance = glm::clamp(app->camDistance, 1.2f, 10.0f);
         }
     }
@@ -330,12 +333,11 @@ private:
         if (app->rightMouseDown)
         {
             if (glfwGetKey(w, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS || glfwGetKey(w, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS)
-                app->camRoll += delta.x * 0.005f;
+                app->camRoll -= delta.x * 0.005f;
             else
             {
-                app->camYaw -= delta.x * 0.005f;
-                app->camPitch += delta.y * 0.005f;
-                app->camPitch = glm::clamp(app->camPitch, -glm::half_pi<float>(), glm::half_pi<float>());
+                app->camYaw += delta.x * 0.005f;
+                app->camPitch -= delta.y * 0.005f;
             }
         }
     }
@@ -430,13 +432,14 @@ private:
 
     void createImage(uint32_t w, uint32_t h, VkFormat format, VkImageTiling tiling,
                      VkImageUsageFlags usage, VkMemoryPropertyFlags props,
-                     VkImage &image, VkDeviceMemory &memory)
+                     VkImage &image, VkDeviceMemory &memory,
+                     uint32_t mipLevels = 1)
     {
         VkImageCreateInfo ii{};
         ii.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         ii.imageType = VK_IMAGE_TYPE_2D;
         ii.extent = {w, h, 1};
-        ii.mipLevels = 1;
+        ii.mipLevels = mipLevels;
         ii.arrayLayers = 1;
         ii.format = format;
         ii.tiling = tiling;
@@ -574,14 +577,15 @@ private:
         si.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         si.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         si.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        si.anisotropyEnable = VK_FALSE;
+        si.anisotropyEnable = VK_TRUE;
+        si.maxAnisotropy = 4.0f;
         si.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
         si.unnormalizedCoordinates = VK_FALSE;
         si.compareEnable = VK_FALSE;
         si.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
         si.mipLodBias = 0.0f;
         si.minLod = 0.0f;
-        si.maxLod = 0.0f;
+        si.maxLod = 12.0f;
         VkSampler sampler;
         if (vkCreateSampler(device, &si, nullptr, &sampler) != VK_SUCCESS)
             throw std::runtime_error("failed to create sampler!");
@@ -906,16 +910,16 @@ private:
     void createDescriptorSetLayout()
     {
         std::array<VkDescriptorSetLayoutBinding, 4> bindings{};
-        // tile textures array (162)
+        // tile textures array (162) — accessed in vertex + fragment for per-pixel normals
         bindings[0].binding = 0;
         bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         bindings[0].descriptorCount = TOTAL_TILES;
-        bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-        // camera UBO
+        bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+        // camera UBO (vertex + fragment for fog)
         bindings[1].binding = 1;
         bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         bindings[1].descriptorCount = 1;
-        bindings[1].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        bindings[1].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
         // height LUT
         bindings[2].binding = 2;
         bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -1070,7 +1074,7 @@ private:
     // ---------- Sphere mesh (same as before) ----------
     void prepareSphere()
     {
-        constexpr size_t lonSegs = 256, latSegs = 128;
+        constexpr size_t lonSegs = 512, latSegs = 256;
         vertices.clear();
         indices.clear();
         for (size_t j = 0; j <= latSegs; ++j)
@@ -1122,40 +1126,39 @@ private:
         vkFreeMemory(device, stagingMem, nullptr);
     }
 
-    // ---------- Load 162 height tiles ----------
+    // ---------- Load 162 height tiles (batched GPU upload + mip generation) ----------
     void loadTiles()
     {
         const char colNames[] = "ABCDEFGHIJKLMNOPQR";
-        // Precompute tile dimensions (same as DivideHeightMap)
         int colWidths[TILES_COLS], rowHeights[TILES_ROWS];
         for (int c = 0; c < TILES_COLS; ++c)
             colWidths[c] = (c < 16) ? 3641 : 3640;
         for (int r = 0; r < TILES_ROWS; ++r)
             rowHeights[r] = (r < 8) ? 3641 : 3640;
 
+        struct TileStaging { VkBuffer buffer = VK_NULL_HANDLE; VkDeviceMemory memory = VK_NULL_HANDLE; int w = 0, h = 0; uint32_t mipLevels = 1; };
+        std::array<TileStaging, TOTAL_TILES> stagings;
+
+        // Pass 1: read files, create staging buffers, create images (with mip chains)
         for (int row = 0; row < TILES_ROWS; ++row)
         {
             for (int col = 0; col < TILES_COLS; ++col)
             {
                 int tileIdx = row * TILES_COLS + col;
                 size_t uTileIdx = static_cast<size_t>(tileIdx);
-                // Build filename: XY_AB.bin
+                TileStaging &st = stagings[uTileIdx];
+
                 std::string fname = basePath + "/Output/DividedHeightMap/";
                 fname += colNames[col];
                 fname += std::to_string(row);
                 fname += "_";
                 int oldX = (col < 9) ? (col - 9) : (col - 8);
                 int oldY = 4 - row;
-                if (oldX == -1)
-                    fname += "[-1]";
-                else if (oldX == 1)
-                    fname += "[+1]";
-                else
-                    fname += std::to_string(oldX);
-                if (oldY == 0)
-                    fname += "[0]";
-                else
-                    fname += std::to_string(oldY);
+                if (oldX == -1) fname += "[-1]";
+                else if (oldX == 1) fname += "[+1]";
+                else fname += std::to_string(oldX);
+                if (oldY == 0) fname += "[0]";
+                else fname += std::to_string(oldY);
                 fname += ".bin";
 
                 std::ifstream file(fname, std::ios::binary | std::ios::ate);
@@ -1168,35 +1171,179 @@ private:
                 file.read(reinterpret_cast<char *>(pixels.data()), static_cast<std::streamsize>(size));
                 file.close();
 
-                int w = colWidths[col];
-                int h = rowHeights[row];
+                st.w = colWidths[col];
+                st.h = rowHeights[row];
+                VkDeviceSize imageSize = static_cast<VkDeviceSize>(st.w) * static_cast<VkDeviceSize>(st.h);
 
-                // Create staging buffer and upload
-                VkDeviceSize imageSize = static_cast<VkDeviceSize>(w) * static_cast<VkDeviceSize>(h);
-                VkBuffer staging;
-                VkDeviceMemory stagingMem;
-                createBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, staging, stagingMem);
+                createBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                             st.buffer, st.memory);
                 void *data;
-                vkMapMemory(device, stagingMem, 0, imageSize, 0, &data);
+                vkMapMemory(device, st.memory, 0, imageSize, 0, &data);
                 memcpy(data, pixels.data(), imageSize);
-                vkUnmapMemory(device, stagingMem);
+                vkUnmapMemory(device, st.memory);
 
-                uint32_t uw = static_cast<uint32_t>(w);
-                uint32_t uh = static_cast<uint32_t>(h);
-                createImage(uw, uh, VK_FORMAT_R8_UNORM, VK_IMAGE_TILING_OPTIMAL,
-                            VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                // Compute full mip chain count
+                uint32_t mipLevels = 1;
+                uint32_t mdim = std::max(static_cast<uint32_t>(st.w), static_cast<uint32_t>(st.h));
+                while (mdim > 1) { mdim >>= 1; ++mipLevels; }
+                st.mipLevels = mipLevels;
+
+                createImage(static_cast<uint32_t>(st.w), static_cast<uint32_t>(st.h),
+                            VK_FORMAT_R8_UNORM, VK_IMAGE_TILING_OPTIMAL,
+                            VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
                             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                            tileImages[uTileIdx], tileImageMemories[uTileIdx]);
-                transitionImageLayout(tileImages[uTileIdx], VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-                copyBufferToImage(staging, tileImages[uTileIdx], uw, uh);
-                transitionImageLayout(tileImages[uTileIdx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-                vkDestroyBuffer(device, staging, nullptr);
-                vkFreeMemory(device, stagingMem, nullptr);
-
-                tileImageViews[uTileIdx] = createImageView(tileImages[uTileIdx], VK_FORMAT_R8_UNORM);
-                tileSamplers[uTileIdx] = createSampler();
+                            tileImages[uTileIdx], tileImageMemories[uTileIdx],
+                            mipLevels);
             }
         }
+
+        // Pass 2: single command buffer — transition / copy / generate mips / finalise
+        VkCommandBufferAllocateInfo ai{};
+        ai.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        ai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        ai.commandPool = commandPool;
+        ai.commandBufferCount = 1;
+        VkCommandBuffer cmdbuf;
+        vkAllocateCommandBuffers(device, &ai, &cmdbuf);
+
+        VkCommandBufferBeginInfo bi{};
+        bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        vkBeginCommandBuffer(cmdbuf, &bi);
+
+        // UNDEFINED → TRANSFER_DST for ALL mip levels of all tiles
+        for (size_t i = 0; i < TOTAL_TILES; ++i)
+        {
+            VkImageMemoryBarrier barrier{};
+            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.image = tileImages[i];
+            barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            barrier.subresourceRange.baseMipLevel = 0;
+            barrier.subresourceRange.levelCount = stagings[i].mipLevels;
+            barrier.subresourceRange.baseArrayLayer = 0;
+            barrier.subresourceRange.layerCount = 1;
+            barrier.srcAccessMask = 0;
+            barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            vkCmdPipelineBarrier(cmdbuf, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                                 VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+        }
+
+        // Copy staging → level 0 for all tiles
+        for (size_t i = 0; i < TOTAL_TILES; ++i)
+        {
+            VkBufferImageCopy region{};
+            region.bufferOffset = 0;
+            region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            region.imageSubresource.mipLevel = 0;
+            region.imageSubresource.baseArrayLayer = 0;
+            region.imageSubresource.layerCount = 1;
+            region.imageOffset = {0, 0, 0};
+            region.imageExtent = {static_cast<uint32_t>(stagings[i].w),
+                                  static_cast<uint32_t>(stagings[i].h), 1};
+            vkCmdCopyBufferToImage(cmdbuf, stagings[i].buffer, tileImages[i],
+                                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+        }
+
+        // Generate mip chain for each tile via blits
+        for (size_t i = 0; i < TOTAL_TILES; ++i)
+        {
+            VkImage img = tileImages[i];
+            int32_t mipW = stagings[i].w;
+            int32_t mipH = stagings[i].h;
+            uint32_t mipLevels = stagings[i].mipLevels;
+
+            for (uint32_t mip = 1; mip < mipLevels; ++mip)
+            {
+                // Level mip-1: TRANSFER_DST → TRANSFER_SRC
+                VkImageMemoryBarrier barrier{};
+                barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+                barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                barrier.image = img;
+                barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                barrier.subresourceRange.baseMipLevel = mip - 1;
+                barrier.subresourceRange.levelCount = 1;
+                barrier.subresourceRange.baseArrayLayer = 0;
+                barrier.subresourceRange.layerCount = 1;
+                barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+                barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+                vkCmdPipelineBarrier(cmdbuf, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                     VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+                // Blit level mip-1 → level mip
+                VkImageBlit blit{};
+                blit.srcOffsets[0] = {0, 0, 0};
+                blit.srcOffsets[1] = {mipW, mipH, 1};
+                blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                blit.srcSubresource.mipLevel = mip - 1;
+                blit.srcSubresource.baseArrayLayer = 0;
+                blit.srcSubresource.layerCount = 1;
+                blit.dstOffsets[0] = {0, 0, 0};
+                blit.dstOffsets[1] = {std::max(1, mipW / 2), std::max(1, mipH / 2), 1};
+                blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                blit.dstSubresource.mipLevel = mip;
+                blit.dstSubresource.baseArrayLayer = 0;
+                blit.dstSubresource.layerCount = 1;
+                vkCmdBlitImage(cmdbuf, img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                               img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                               1, &blit, VK_FILTER_LINEAR);
+
+                // Level mip-1: TRANSFER_SRC → SHADER_READ_ONLY
+                barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+                barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+                barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                vkCmdPipelineBarrier(cmdbuf, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                     VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+                mipW = std::max(1, mipW / 2);
+                mipH = std::max(1, mipH / 2);
+            }
+
+            // Last level: TRANSFER_DST → SHADER_READ_ONLY
+            VkImageMemoryBarrier barrier{};
+            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.image = img;
+            barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            barrier.subresourceRange.baseMipLevel = mipLevels - 1;
+            barrier.subresourceRange.levelCount = 1;
+            barrier.subresourceRange.baseArrayLayer = 0;
+            barrier.subresourceRange.layerCount = 1;
+            barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            vkCmdPipelineBarrier(cmdbuf, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+        }
+
+        vkEndCommandBuffer(cmdbuf);
+
+        VkSubmitInfo si{};
+        si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        si.commandBufferCount = 1;
+        si.pCommandBuffers = &cmdbuf;
+        vkQueueSubmit(graphicsQueue, 1, &si, VK_NULL_HANDLE);
+        vkQueueWaitIdle(graphicsQueue);
+        vkFreeCommandBuffers(device, commandPool, 1, &cmdbuf);
+
+        // Pass 3: destroy staging, create image views + shared sampler
+        for (size_t i = 0; i < TOTAL_TILES; ++i)
+        {
+            vkDestroyBuffer(device, stagings[i].buffer, nullptr);
+            vkFreeMemory(device, stagings[i].memory, nullptr);
+            tileImageViews[i] = createImageView(tileImages[i], VK_FORMAT_R8_UNORM);
+        }
+        sharedSampler = createSampler();
     }
 
     // ---------- Colour ramp (same) ----------
@@ -1248,7 +1395,6 @@ private:
         vkDestroyBuffer(device, staging, nullptr);
         vkFreeMemory(device, stagingMem, nullptr);
         colorRampImageView = createImageView(colorRampImage, VK_FORMAT_R8G8B8A8_UNORM);
-        colorRampSampler = createSampler();
     }
 
     // ---------- Height LUT (same) ----------
@@ -1310,87 +1456,98 @@ private:
         }
     }
 
-    // ---------- Descriptor set (array of 162 tile samplers) ----------
+    // ---------- Per-frame descriptor sets ----------
     void createDescriptorSet()
     {
-        std::array<VkDescriptorPoolSize, 3> poolSizes = {{{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, TOTAL_TILES + 1}, // tiles + ramp
-                                                           {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
-                                                           {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1}}};
+        // Pool: MAX_FRAMES_IN_FLIGHT sets, each with tiles + ramp / UBO / LUT
+        uint32_t totalSamplers = (TOTAL_TILES + 1) * MAX_FRAMES_IN_FLIGHT;
+        std::array<VkDescriptorPoolSize, 3> poolSizes = {{{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, totalSamplers},
+                                                           {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, MAX_FRAMES_IN_FLIGHT},
+                                                           {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, MAX_FRAMES_IN_FLIGHT}}};
         VkDescriptorPoolCreateInfo pi{};
         pi.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         pi.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
         pi.pPoolSizes = poolSizes.data();
-        pi.maxSets = 1;
+        pi.maxSets = MAX_FRAMES_IN_FLIGHT;
         if (vkCreateDescriptorPool(device, &pi, nullptr, &descriptorPool) != VK_SUCCESS)
             throw std::runtime_error("failed to create descriptor pool!");
 
+        descriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
         VkDescriptorSetAllocateInfo ai{};
         ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         ai.descriptorPool = descriptorPool;
-        ai.descriptorSetCount = 1;
-        ai.pSetLayouts = &descriptorSetLayout;
-        if (vkAllocateDescriptorSets(device, &ai, &descriptorSet) != VK_SUCCESS)
-            throw std::runtime_error("failed to allocate descriptor set!");
+        ai.descriptorSetCount = MAX_FRAMES_IN_FLIGHT;
+        std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
+        ai.pSetLayouts = layouts.data();
+        if (vkAllocateDescriptorSets(device, &ai, descriptorSets.data()) != VK_SUCCESS)
+            throw std::runtime_error("failed to allocate descriptor sets!");
 
-        // Prepare array of image info for all tiles
+        // Shared tile image info (all point to sharedSampler)
         std::vector<VkDescriptorImageInfo> tileInfos(TOTAL_TILES);
         for (size_t i = 0; i < TOTAL_TILES; ++i)
         {
             tileInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             tileInfos[i].imageView = tileImageViews[i];
-            tileInfos[i].sampler = tileSamplers[i];
+            tileInfos[i].sampler = sharedSampler;
         }
-        VkWriteDescriptorSet tileWrite{};
-        tileWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        tileWrite.dstSet = descriptorSet;
-        tileWrite.dstBinding = 0;
-        tileWrite.dstArrayElement = 0;
-        tileWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        tileWrite.descriptorCount = TOTAL_TILES;
-        tileWrite.pImageInfo = tileInfos.data();
 
-        VkDescriptorBufferInfo uboInfo{};
-        uboInfo.buffer = uniformBuffers[0];
-        uboInfo.offset = 0;
-        uboInfo.range = sizeof(UniformBufferObject);
-
-        VkWriteDescriptorSet uboWrite{};
-        uboWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        uboWrite.dstSet = descriptorSet;
-        uboWrite.dstBinding = 1;
-        uboWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        uboWrite.descriptorCount = 1;
-        uboWrite.pBufferInfo = &uboInfo;
-
+        // LUT info (same for all frames)
         VkDescriptorBufferInfo lutInfo{};
         lutInfo.buffer = heightLUTBuffer;
         lutInfo.offset = 0;
         lutInfo.range = sizeof(float) * 256;
-        VkWriteDescriptorSet lutWrite{};
-        lutWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        lutWrite.dstSet = descriptorSet;
-        lutWrite.dstBinding = 2;
-        lutWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        lutWrite.descriptorCount = 1;
-        lutWrite.pBufferInfo = &lutInfo;
 
+        // Ramp image info (same for all frames)
         VkDescriptorImageInfo rampInfo{};
         rampInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         rampInfo.imageView = colorRampImageView;
-        rampInfo.sampler = colorRampSampler;
-        VkWriteDescriptorSet rampWrite{};
-        rampWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        rampWrite.dstSet = descriptorSet;
-        rampWrite.dstBinding = 3;
-        rampWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        rampWrite.descriptorCount = 1;
-        rampWrite.pImageInfo = &rampInfo;
+        rampInfo.sampler = sharedSampler;
 
-        std::array<VkWriteDescriptorSet, 4> writes = {tileWrite, uboWrite, lutWrite, rampWrite};
-        // Ensure pNext is null (avoid the validation error)
-        for (auto &w : writes)
-            w.pNext = nullptr;
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        // Per-frame UBO infos
+        std::vector<VkDescriptorBufferInfo> uboInfos(MAX_FRAMES_IN_FLIGHT);
+        for (size_t f = 0; f < MAX_FRAMES_IN_FLIGHT; ++f)
+        {
+            uboInfos[f].buffer = uniformBuffers[f];
+            uboInfos[f].offset = 0;
+            uboInfos[f].range = sizeof(UniformBufferObject);
+        }
+
+        // Write each descriptor set
+        for (size_t f = 0; f < MAX_FRAMES_IN_FLIGHT; ++f)
+        {
+            std::array<VkWriteDescriptorSet, 4> writes{};
+            for (auto &w : writes) w.pNext = nullptr;
+
+            writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[0].dstSet = descriptorSets[f];
+            writes[0].dstBinding = 0;
+            writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writes[0].descriptorCount = TOTAL_TILES;
+            writes[0].pImageInfo = tileInfos.data();
+
+            writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[1].dstSet = descriptorSets[f];
+            writes[1].dstBinding = 1;
+            writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            writes[1].descriptorCount = 1;
+            writes[1].pBufferInfo = &uboInfos[f];
+
+            writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[2].dstSet = descriptorSets[f];
+            writes[2].dstBinding = 2;
+            writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[2].descriptorCount = 1;
+            writes[2].pBufferInfo = &lutInfo;
+
+            writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[3].dstSet = descriptorSets[f];
+            writes[3].dstBinding = 3;
+            writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writes[3].descriptorCount = 1;
+            writes[3].pImageInfo = &rampInfo;
+
+            vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        }
     }
 
     void createCommandBuffers()
@@ -1429,7 +1586,7 @@ private:
         VkDeviceSize offsets[] = {0};
         vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer, offsets);
         vkCmdBindIndexBuffer(cmd, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
 
         // Single draw call — tile index is computed from UV in the vertex shader
         TilePushConstants pc{};
@@ -1455,9 +1612,10 @@ private:
         fi.flags = VK_FENCE_CREATE_SIGNALED_BIT;
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
         {
-            vkCreateSemaphore(device, &si, nullptr, &imageAvailableSemaphores[i]);
-            vkCreateSemaphore(device, &si, nullptr, &renderFinishedSemaphores[i]);
-            vkCreateFence(device, &fi, nullptr, &inFlightFences[i]);
+            if (vkCreateSemaphore(device, &si, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS ||
+                vkCreateSemaphore(device, &si, nullptr, &renderFinishedSemaphores[i]) != VK_SUCCESS ||
+                vkCreateFence(device, &fi, nullptr, &inFlightFences[i]) != VK_SUCCESS)
+                throw std::runtime_error("failed to create sync objects!");
         }
     }
 
@@ -1481,8 +1639,11 @@ private:
         camPos.y = camDistance * sinPitch;
         camPos.z = camDistance * cosPitch * cosYaw;
 
-        glm::mat4 view = glm::lookAt(camPos, camTarget, glm::vec3(0, 1, 0));
-        view = glm::rotate(view, camRoll, glm::vec3(0, 0, 1));
+        // Dynamic up: perpendicular to view direction at any pitch — no gimbal lock
+        glm::vec3 up(-sinPitch * sinYaw, cosPitch, -sinPitch * cosYaw);
+        glm::mat4 view = glm::lookAt(camPos, camTarget, up);
+        glm::vec3 forward = glm::normalize(camTarget - camPos);
+        view = glm::rotate(view, camRoll, forward);
         float aspect = static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height);
         glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100000.0f);
         proj[1][1] *= -1;
@@ -1493,6 +1654,7 @@ private:
         ubo.model = glm::mat4(1.0f);
         ubo.view = view;
         ubo.proj = proj;
+        ubo.cameraPos = glm::vec4(camPos, 0.0f);
         memcpy(uniformBuffersMapped[currentFrame], &ubo, sizeof(ubo));
     }
 
@@ -1505,19 +1667,6 @@ private:
 
         vkResetCommandBuffer(commandBuffers[currentFrame], 0);
         recordCommandBuffer(commandBuffers[currentFrame], imageIndex);
-
-        VkDescriptorBufferInfo uboInfo{};
-        uboInfo.buffer = uniformBuffers[currentFrame];
-        uboInfo.offset = 0;
-        uboInfo.range = sizeof(UniformBufferObject);
-        VkWriteDescriptorSet uboWrite{};
-        uboWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        uboWrite.dstSet = descriptorSet;
-        uboWrite.dstBinding = 1;
-        uboWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        uboWrite.descriptorCount = 1;
-        uboWrite.pBufferInfo = &uboInfo;
-        vkUpdateDescriptorSets(device, 1, &uboWrite, 0, nullptr);
 
         VkSubmitInfo submit{};
         submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -1544,10 +1693,84 @@ private:
 
     void cleanup()
     {
+        if (device == VK_NULL_HANDLE) return;
         vkDeviceWaitIdle(device);
-        // Destroy resources (abbreviated)
-        glfwDestroyWindow(window);
-        glfwTerminate();
+
+        // Sync objects
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+        {
+            if (renderFinishedSemaphores[i]) vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
+            if (imageAvailableSemaphores[i]) vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
+            if (inFlightFences[i]) vkDestroyFence(device, inFlightFences[i], nullptr);
+        }
+
+        // Command pool (frees all command buffers)
+        if (commandPool) vkDestroyCommandPool(device, commandPool, nullptr);
+
+        // Uniform buffers
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+        {
+            if (uniformBuffers[i]) vkDestroyBuffer(device, uniformBuffers[i], nullptr);
+            if (uniformBuffersMemory[i]) vkFreeMemory(device, uniformBuffersMemory[i], nullptr);
+        }
+
+        // Height LUT
+        if (heightLUTBuffer) vkDestroyBuffer(device, heightLUTBuffer, nullptr);
+        if (heightLUTMemory) vkFreeMemory(device, heightLUTMemory, nullptr);
+
+        // Colour ramp
+        if (colorRampImageView) vkDestroyImageView(device, colorRampImageView, nullptr);
+        if (colorRampImage) vkDestroyImage(device, colorRampImage, nullptr);
+        if (colorRampImageMemory) vkFreeMemory(device, colorRampImageMemory, nullptr);
+
+        // Shared sampler
+        if (sharedSampler) vkDestroySampler(device, sharedSampler, nullptr);
+
+        // Tile images
+        for (auto &iv : tileImageViews) { if (iv) vkDestroyImageView(device, iv, nullptr); }
+        for (auto &img : tileImages) { if (img) vkDestroyImage(device, img, nullptr); }
+        for (auto &mem : tileImageMemories) { if (mem) vkFreeMemory(device, mem, nullptr); }
+
+        // Descriptor pool (frees all descriptor sets)
+        if (descriptorPool) vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+
+        // Pipeline
+        if (graphicsPipeline) vkDestroyPipeline(device, graphicsPipeline, nullptr);
+        if (pipelineLayout) vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+        if (descriptorSetLayout) vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
+        if (renderPass) vkDestroyRenderPass(device, renderPass, nullptr);
+
+        // Framebuffers
+        for (auto &fb : swapChainFramebuffers) { if (fb) vkDestroyFramebuffer(device, fb, nullptr); }
+
+        // Depth
+        if (depthImageView) vkDestroyImageView(device, depthImageView, nullptr);
+        if (depthImage) vkDestroyImage(device, depthImage, nullptr);
+        if (depthImageMemory) vkFreeMemory(device, depthImageMemory, nullptr);
+
+        // Swapchain image views + swapchain
+        for (auto &iv : swapChainImageViews) { if (iv) vkDestroyImageView(device, iv, nullptr); }
+        if (swapChain) vkDestroySwapchainKHR(device, swapChain, nullptr);
+
+        // Vertex/index buffers
+        if (vertexBuffer) vkDestroyBuffer(device, vertexBuffer, nullptr);
+        if (vertexBufferMemory) vkFreeMemory(device, vertexBufferMemory, nullptr);
+        if (indexBuffer) vkDestroyBuffer(device, indexBuffer, nullptr);
+        if (indexBufferMemory) vkFreeMemory(device, indexBufferMemory, nullptr);
+
+        // Device
+        vkDestroyDevice(device, nullptr);
+
+        // Surface + instance
+        if (surface) vkDestroySurfaceKHR(instance, surface, nullptr);
+        if (instance) vkDestroyInstance(instance, nullptr);
+
+        // Window
+        if (window)
+        {
+            glfwDestroyWindow(window);
+            glfwTerminate();
+        }
     }
 };
 
