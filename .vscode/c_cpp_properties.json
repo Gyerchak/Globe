@@ -3,11 +3,13 @@
     {
       "name": "windows-gcc-x64",
       "includePath": [
-    "${workspaceFolder}/**",
-    "${workspaceFolder}/.Dependencies"
-],
+        "${workspaceFolder}/**",
+        "C:/VulkanSDK/1.4.350.0/Include",
+        "C:/msys64/ucrt64/include",
+        "${workspaceFolder}/.dependencies"
+      ],
       "compilerPath": "C:/msys64/ucrt64/bin/g++.exe",
-      "cStandard": "c17",
+      "cStandard": "${default}",
       "cppStandard": "c++20",
       "intelliSenseMode": "windows-gcc-x64",
       "compilerArgs": []

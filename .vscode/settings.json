@@ -74,6 +74,11 @@
         "MSYSTEM": "UCRT64",
         "CHERE_INVOKING": "1"
       }
+    },
+    "OpenCode": {
+      "path": "opencode",
+      "args": [],
+      "icon": "terminal-cmd"
     }
   },
   "terminal.integrated.defaultProfile.windows": "MSYS2 UCRT64"
