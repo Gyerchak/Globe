@@ -83,3 +83,6 @@ Data4Deepseek.exe
 
 #Switch ON BY # 
 .Old/
+
+#FOR SECURITY REASONS DO NOT EVER COMMIT THESE FILES TO GIT
+token.txt
