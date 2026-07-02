@@ -1,0 +1,36 @@
+{
+  "name": "opencode-remote",
+  "displayName": "OpenCode Remote Control",
+  "description": "WebSocket bridge for Discord bot remote control of VS Code terminal and OpenCode",
+  "version": "1.0.0",
+  "publisher": "local",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "opencode-remote.start",
+        "title": "Start OpenCode Remote Control Server"
+      },
+      {
+        "command": "opencode-remote.stop",
+        "title": "Stop OpenCode Remote Control Server"
+      },
+      {
+        "command": "opencode-remote.status",
+        "title": "Show OpenCode Remote Control Status"
+      }
+    ]
+  },
+  "dependencies": {
+    "ws": "^8.21.0"
+  }
+}
